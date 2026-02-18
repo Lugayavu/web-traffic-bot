@@ -7,8 +7,18 @@ from bot.session_simulator import SessionSimulator
 
 logger = setup_logger(__name__)
 
-# Set to True from the dashboard to request a graceful stop
+# ---------------------------------------------------------------------------
+# Module-level stop flag.
+# The dashboard sets this to True to request a graceful shutdown.
+# TrafficBot.run() resets it to False at the start of each run.
+# ---------------------------------------------------------------------------
 _STOP_REQUESTED: bool = False
+
+
+def request_stop() -> None:
+    """Ask the currently-running bot to stop after the current session."""
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
 
 
 class TrafficBot:
@@ -25,8 +35,8 @@ class TrafficBot:
     # ------------------------------------------------------------------
 
     def run(self):
-        import bot.traffic_bot as _self_module
-        _self_module._STOP_REQUESTED = False  # reset on each run
+        global _STOP_REQUESTED
+        _STOP_REQUESTED = False  # reset on each run
 
         logger.info("=" * 60)
         logger.info("WEB TRAFFIC BOT STARTED")
@@ -49,8 +59,8 @@ class TrafficBot:
                 break
 
             # Check dashboard stop request
-            if _self_module._STOP_REQUESTED:
-                logger.info("Stop requested via dashboard. Stopping after current session.")
+            if _STOP_REQUESTED:
+                logger.info("Stop requested. Stopping after current session.")
                 break
 
             try:

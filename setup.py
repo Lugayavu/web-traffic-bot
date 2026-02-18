@@ -12,6 +12,9 @@ setup(
     long_description_content_type='text/markdown',
     packages=find_packages(),
     include_package_data=True,
+    package_data={
+        "bot.dashboard": ["templates/*.html", "static/*"],
+    },
     python_requires='>=3.8',
     install_requires=[
         'selenium>=4.0.0',

@@ -8,6 +8,7 @@ Logs are streamed live to the browser via Server-Sent Events (SSE).
 import logging
 import queue
 import threading
+from typing import Optional
 
 from flask import Flask, Response, jsonify, render_template, request
 
@@ -24,7 +25,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # Global bot state
 # ---------------------------------------------------------------------------
 
-_bot_thread: threading.Thread | None = None
+_bot_thread: Optional[threading.Thread] = None
 _bot_lock = threading.Lock()
 _log_queue: queue.Queue = queue.Queue(maxsize=500)
 
@@ -62,9 +63,14 @@ def _attach_queue_handler() -> None:
             return  # already attached
     handler = _QueueHandler()
     handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                          datefmt="%H:%M:%S")
+        logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        )
     )
+    # Set level so DEBUG messages from bot modules reach the dashboard
+    handler.setLevel(logging.DEBUG)
+    root.setLevel(logging.DEBUG)
     root.addHandler(handler)
 
 
@@ -77,7 +83,9 @@ _attach_queue_handler()
 
 @app.route("/")
 def index():
-    return render_template("index.html", config=_current_config)
+    # Pre-join proxies into a newline-separated string for the textarea
+    proxies_str = "\n".join(_current_config.get("proxies") or [])
+    return render_template("index.html", config=_current_config, proxies_str=proxies_str)
 
 
 @app.route("/api/config", methods=["GET"])
@@ -87,7 +95,6 @@ def get_config():
 
 @app.route("/api/config", methods=["POST"])
 def save_config():
-    global _current_config
     data = request.get_json(force=True)
 
     # Sanitise / coerce types
@@ -124,8 +131,8 @@ def start_bot():
         if not _current_config.get("target_url"):
             return jsonify({"status": "error", "message": "target_url is required"}), 400
 
-        # Drain old log messages
-        while not _log_queue.empty():
+        # Drain old log messages (thread-safe: keep trying until empty)
+        while True:
             try:
                 _log_queue.get_nowait()
             except queue.Empty:
@@ -150,18 +157,19 @@ def start_bot():
 @app.route("/api/stop", methods=["POST"])
 def stop_bot():
     """
-    There is no clean way to kill a thread in Python.
-    We signal the bot by setting a flag that TrafficBot checks.
-    For now we just report the status; a hard stop requires the user
-    to restart the server process.
+    Request a graceful stop.  TrafficBot checks the flag between sessions.
+    A hard stop requires restarting the server process.
     """
     running = _bot_thread is not None and _bot_thread.is_alive()
     if not running:
         return jsonify({"status": "ok", "message": "Bot is not running"})
-    # Best-effort: set a stop flag that TrafficBot will pick up
-    from bot import traffic_bot as _tb
-    _tb._STOP_REQUESTED = True
-    return jsonify({"status": "ok", "message": "Stop signal sent — bot will finish the current session then exit"})
+
+    from bot.traffic_bot import request_stop
+    request_stop()
+    return jsonify({
+        "status": "ok",
+        "message": "Stop signal sent — bot will exit after the current session",
+    })
 
 
 @app.route("/api/logs")
@@ -177,12 +185,17 @@ def stream_logs():
                 safe = line.replace("\n", " ").replace("\r", "")
                 yield f"data: {safe}\n\n"
             except queue.Empty:
-                # Keep-alive ping
+                # Keep-alive ping so the browser doesn't close the connection
                 yield ": ping\n\n"
 
-    return Response(_generate(), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache",
-                             "X-Accel-Buffering": "no"})
+    return Response(
+        _generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -190,5 +203,5 @@ def stream_logs():
 # ---------------------------------------------------------------------------
 
 def run_dashboard(host: str = "0.0.0.0", port: int = 5000, debug: bool = False) -> None:
-    print(f"\n  Web Traffic Bot Dashboard → http://{host}:{port}\n")
+    print(f"\n  Web Traffic Bot Dashboard → http://localhost:{port}\n")
     app.run(host=host, port=port, debug=debug, threaded=True)

@@ -18,7 +18,7 @@ class ProxyManager:
         if self.proxy_list:
             logger.info(f"Initialized ProxyManager with {len(self.proxy_list)} proxies")
         else:
-            logger.warning("No proxies provided")
+            logger.info("No proxies configured — running without proxy")
     
     def get_next_proxy(self):
         """
