@@ -117,11 +117,11 @@ Examples:
 
         if args.url:
             config.target_url = args.url
-        if args.sessions:
+        if args.sessions is not None:
             config.sessions_count = args.sessions
-        if args.duration:
+        if args.duration is not None:
             config.duration_seconds = args.duration
-        if args.session_duration:
+        if args.session_duration is not None:
             config.session_duration = args.session_duration
         if args.headless is not None:
             config.headless = args.headless

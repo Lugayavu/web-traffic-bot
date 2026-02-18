@@ -474,11 +474,8 @@ async function stopBot() {
 /* ------------------------------------------------------------------ */
 /* Status polling                                                       */
 /* ------------------------------------------------------------------ */
-let _statusInterval = null;
 let _elapsedInterval = null;
 let _elapsedStart = null;
-let _completedCount = 0;
-let _failedCount = 0;
 
 function updateStatus(running) {
   const badge = $('status-badge');
@@ -500,8 +497,6 @@ function updateStatus(running) {
 
 function startElapsedTimer() {
   _elapsedStart = Date.now();
-  _completedCount = 0;
-  _failedCount = 0;
   $('stat-completed').textContent = '0';
   $('stat-failed').textContent = '0';
   clearInterval(_elapsedInterval);
