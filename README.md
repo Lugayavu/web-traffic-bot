@@ -7,6 +7,7 @@ It opens real browser sessions, scrolls through pages, and simulates user engage
 
 ## Features
 
+- **Web dashboard** — configure and control everything from your browser at `http://localhost:5000`
 - Headless Chrome/Chromium sessions via Selenium
 - Configurable number of sessions, session duration, and total run time
 - Optional proxy rotation (round-robin)
@@ -35,14 +36,14 @@ bash scripts/ubuntu_setup.sh
 
 ```bash
 # Clone the repo
-git clone https://github.com/<your-username>/web-traffic-bot.git
+git clone https://github.com/Lugayavu/web-traffic-bot.git
 cd web-traffic-bot
 
 # (Recommended) create a virtual environment
 python3 -m venv venv
 source venv/bin/activate
 
-# Install the package and its dependencies
+# Install the package and all dependencies (including Flask for the dashboard)
 pip install -e .
 ```
 
@@ -50,9 +51,42 @@ After installation the `web-traffic-bot` command is available in your shell.
 
 ---
 
-## Usage
+## Web Dashboard
 
-### Via CLI flags (no config file needed)
+The easiest way to use the bot is through the built-in web dashboard.
+
+```bash
+web-traffic-bot --dashboard
+```
+
+Then open your browser at **http://localhost:5000**
+
+### Dashboard features
+
+| Section | What you can do |
+|---|---|
+| **Target URL** | Set the website you want to test |
+| **Sessions** | How many browser sessions to open |
+| **Session Duration** | How long each session stays on the page (seconds) |
+| **Total Duration** | Hard stop after this many seconds |
+| **Proxies** | Paste one proxy per line (optional) |
+| **Chromium Path** | Custom browser binary path (leave blank to auto-detect) |
+| **Headless toggle** | Run silently or with a visible browser window |
+| **Start / Stop** | Launch or gracefully stop the bot |
+| **Live Log** | Real-time log stream directly in the browser |
+
+### Custom host / port
+
+```bash
+web-traffic-bot --dashboard --host 127.0.0.1 --port 8080
+# → http://127.0.0.1:8080
+```
+
+---
+
+## CLI Usage (no dashboard)
+
+### Quick start
 
 ```bash
 web-traffic-bot --url https://yoursite.com --sessions 20 --duration 600
@@ -62,7 +96,7 @@ web-traffic-bot --url https://yoursite.com --sessions 20 --duration 600
 
 ```bash
 cp config/config.example.yaml config/config.yaml
-# Edit config/config.yaml to suit your needs
+# Edit config/config.yaml
 web-traffic-bot --config config/config.yaml
 ```
 
@@ -72,25 +106,31 @@ web-traffic-bot --config config/config.yaml
 web-traffic-bot --config config/config.yaml --sessions 50 --no-headless
 ```
 
-### All options
+### All CLI options
 
 ```
-usage: web-traffic-bot [-h] [--url URL] [--config CONFIG]
-                       [--sessions SESSIONS] [--duration DURATION]
-                       [--session-duration SESSION_DURATION]
-                       [--headless] [--no-headless]
+usage: web-traffic-bot [-h]
+                       [--dashboard] [--host HOST] [--port PORT]
+                       [--url URL] [--config CONFIG]
+                       [--sessions N] [--duration SECS]
+                       [--session-duration SECS]
+                       [--headless | --no-headless]
                        [--proxy PROXY_URL]
 
-Options:
+Dashboard:
+  --dashboard, -d       Launch the web dashboard
+  --host HOST           Dashboard host (default: 0.0.0.0)
+  --port PORT           Dashboard port (default: 5000)
+
+Bot (CLI mode):
   --url, --target-url   Target URL to test
   --config, -c          Path to YAML config file
-  --sessions            Number of sessions to run (default: 10)
-  --duration            Total run duration in seconds (default: 600)
-  --session-duration    Duration per session in seconds (default: 45)
+  --sessions N          Number of sessions (default: 10)
+  --duration SECS       Total run duration in seconds (default: 600)
+  --session-duration S  Duration per session in seconds (default: 45)
   --headless            Run in headless mode (default)
   --no-headless         Run with a visible browser window
   --proxy PROXY_URL     Proxy URL; repeat for multiple proxies
-                        e.g. --proxy http://user:pass@host:port
 ```
 
 ---
@@ -115,6 +155,10 @@ chromium_path: ""           # leave blank to auto-detect via webdriver-manager
 ## Running directly (without installing)
 
 ```bash
+# Dashboard
+python -m bot.cli --dashboard
+
+# CLI mode
 python -m bot.cli --url https://yoursite.com --sessions 5
 ```
 
@@ -126,15 +170,20 @@ python -m bot.cli --url https://yoursite.com --sessions 5
 web-traffic-bot/
 ├── bot/
 │   ├── __init__.py
-│   ├── config_handler.py   # YAML config loader + attribute accessors
-│   ├── logger.py           # Logging setup
-│   ├── proxy_manager.py    # Round-robin proxy rotation
-│   ├── selenium_driver.py  # Chrome/Chromium WebDriver wrapper
-│   ├── session_simulator.py# Realistic engagement simulation
-│   ├── traffic_bot.py      # Main orchestrator
-│   └── cli/
+│   ├── config_handler.py       # YAML config loader + attribute accessors
+│   ├── logger.py               # Logging setup
+│   ├── proxy_manager.py        # Round-robin proxy rotation
+│   ├── selenium_driver.py      # Chrome/Chromium WebDriver wrapper
+│   ├── session_simulator.py    # Realistic engagement simulation
+│   ├── traffic_bot.py          # Main orchestrator
+│   ├── cli/
+│   │   ├── __init__.py
+│   │   └── __main__.py         # CLI entry point (--dashboard or bot flags)
+│   └── dashboard/
 │       ├── __init__.py
-│       └── __main__.py     # CLI entry point
+│       ├── app.py              # Flask dashboard app + SSE log stream
+│       └── templates/
+│           └── index.html      # Dashboard UI
 ├── config/
 │   └── config.example.yaml
 ├── scripts/

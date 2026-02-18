@@ -14,11 +14,39 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  web-traffic-bot --url https://example.com --sessions 50 --duration 3600
-  web-traffic-bot --config config.yaml
-  web-traffic-bot --config config.yaml --url https://example.com --sessions 10
+  # Launch the web dashboard (recommended)
+  web-traffic-bot --dashboard
+
+  # Run directly from the command line
+  web-traffic-bot --url https://yoursite.com --sessions 20 --duration 600
+  web-traffic-bot --config config/config.yaml
+  web-traffic-bot --config config/config.yaml --sessions 50 --no-headless
         """
     )
+
+    # ------------------------------------------------------------------ #
+    # Dashboard mode                                                        #
+    # ------------------------------------------------------------------ #
+    parser.add_argument(
+        '--dashboard', '-d',
+        action='store_true',
+        help='Launch the web dashboard (default: http://localhost:5000)'
+    )
+    parser.add_argument(
+        '--host',
+        default='0.0.0.0',
+        help='Dashboard host (default: 0.0.0.0)'
+    )
+    parser.add_argument(
+        '--port',
+        type=int,
+        default=5000,
+        help='Dashboard port (default: 5000)'
+    )
+
+    # ------------------------------------------------------------------ #
+    # CLI bot mode                                                          #
+    # ------------------------------------------------------------------ #
     parser.add_argument(
         '--url', '--target-url',
         dest='url',
@@ -48,26 +76,43 @@ Examples:
         '--headless',
         action='store_true',
         default=True,
-        help='Run in headless mode (default: True)'
+        help='Run in headless mode (default)'
     )
     parser.add_argument(
         '--no-headless',
         action='store_false',
         dest='headless',
-        help='Run with visible browser'
+        help='Run with a visible browser window'
     )
     parser.add_argument(
         '--proxy',
         action='append',
         dest='proxies',
         metavar='PROXY_URL',
-        help='Proxy URL (can be repeated for multiple proxies)'
+        help='Proxy URL (repeat for multiple proxies)'
     )
 
     args = parser.parse_args()
 
+    # ------------------------------------------------------------------ #
+    # Dashboard branch                                                      #
+    # ------------------------------------------------------------------ #
+    if args.dashboard:
+        try:
+            from bot.dashboard.app import run_dashboard
+        except ImportError:
+            logger.error(
+                "Flask is required for the dashboard. "
+                "Install it with:  pip install flask"
+            )
+            sys.exit(1)
+        run_dashboard(host=args.host, port=args.port)
+        return
+
+    # ------------------------------------------------------------------ #
+    # CLI bot branch                                                        #
+    # ------------------------------------------------------------------ #
     try:
-        # Build config - file is optional; CLI flags override file values
         config = ConfigHandler(args.config)
 
         if args.url:
@@ -83,7 +128,6 @@ Examples:
         if args.proxies:
             config.proxies = args.proxies
 
-        # Validate after all overrides are applied
         config.validate()
 
         bot = TrafficBot(config)
