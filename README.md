@@ -289,36 +289,54 @@ sudo nginx -t && sudo systemctl reload nginx
 
 **Symptom:** Bot starts then immediately fails with a WebDriver error in the live log.
 
-**Most common cause on Ubuntu servers:** `chromium-browser` is installed but `chromedriver` is not, or the versions don't match.
+---
 
-**Fix:**
+#### Case 1 — Snap Chromium (Ubuntu 22.04 / 24.04 — most common)
+
+If `chromium --version` shows `... snap`, you have the snap version.
+The snap ships its own bundled `chromedriver` — they **must** be used together.
 
 ```bash
-# Ubuntu 22.04 / 24.04
+# Verify the snap chromedriver is available
+chromium.chromedriver --version
+```
+
+If that command works and the version matches `chromium --version`, the bot will detect it automatically. No extra steps needed.
+
+If `chromium.chromedriver` is not found:
+
+```bash
+sudo snap remove chromium
+sudo snap install chromium   # reinstalls browser + driver together
+```
+
+---
+
+#### Case 2 — apt Chromium (Ubuntu 20.04 or non-snap 22.04)
+
+```bash
+# Ubuntu 22.04 (non-snap)
 sudo apt install -y chromium chromium-driver
 
 # Ubuntu 20.04
 sudo apt install -y chromium-browser chromium-chromedriver
 
-# Verify both are installed and versions match
+# Verify both versions match (same major number)
 chromium --version        # or: chromium-browser --version
 chromedriver --version
 ```
 
-Both version numbers should start with the same major version (e.g. both `124.x.x.x`).
+---
 
-**If you have Google Chrome instead of Chromium:**
+#### Case 3 — Google Chrome
 
-```bash
-# Install the matching chromedriver via webdriver-manager
-pip install webdriver-manager
-```
+The bot will fall back to `webdriver-manager` automatically if no system `chromedriver` is found. `webdriver-manager` is included in the dependencies.
 
-The bot will fall back to `webdriver-manager` automatically if no system `chromedriver` is found.
+---
 
-**If Chrome/Chromium is installed in a non-standard path:**
+#### Case 4 — Non-standard install path
 
-Set the **Chromium Path** field in the dashboard (or `chromium_path` in the config file) to the full path of the browser binary, e.g. `/usr/bin/chromium`.
+Set the **Chromium Path** field in the dashboard (or `chromium_path` in the config file) to the full path of the browser binary, e.g. `/usr/bin/chromium` or `/snap/bin/chromium`.
 
 ---
 
