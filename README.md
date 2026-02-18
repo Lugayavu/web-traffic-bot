@@ -8,10 +8,12 @@ It opens real browser sessions, scrolls through pages, and simulates user engage
 ## Features
 
 - **Web dashboard** — configure and control everything from your browser at `http://localhost:5000`
+- **Concurrent sessions** — run multiple browser windows simultaneously (set any number)
+- **Device fingerprint randomisation** — each session gets a unique user-agent, screen resolution, language, and timezone
+- **Proxy-aware timezone** — automatically detects the proxy's exit IP timezone via GeoIP lookup
 - Headless Chrome/Chromium sessions via Selenium
-- Configurable number of sessions, session duration, and total run time
+- Configurable total sessions, concurrent sessions, session duration, and total run time
 - Optional proxy rotation (round-robin)
-- Randomised user-agent rotation
 - Realistic engagement simulation (scrolling, mouse movement, idle time)
 - YAML config file **or** pure CLI flags
 - Installable as a system command (`web-traffic-bot`)
@@ -66,14 +68,16 @@ Then open your browser at **http://localhost:5000**
 | Section | What you can do |
 |---|---|
 | **Target URL** | Set the website you want to test |
-| **Sessions** | How many browser sessions to open |
+| **Total Sessions** | How many browser sessions to open in total |
+| **Concurrent Sessions** | How many browsers run at the same time (any number) |
 | **Session Duration** | How long each session stays on the page (seconds) |
 | **Total Duration** | Hard stop after this many seconds |
-| **Proxies** | Paste one proxy per line (optional) |
+| **Proxies** | Paste one proxy per line — timezone auto-detected per proxy |
 | **Chromium Path** | Custom browser binary path (leave blank to auto-detect) |
 | **Headless toggle** | Run silently or with a visible browser window |
 | **Start / Stop** | Launch or gracefully stop the bot |
 | **Live Log** | Real-time log stream directly in the browser |
+| **Stats cards** | Live counters: ✅ Completed, ❌ Failed, Progress, ⏱ Elapsed |
 
 ### Custom host / port
 
@@ -140,7 +144,8 @@ Bot (CLI mode):
 ```yaml
 # config/config.yaml
 target_url: "https://yoursite.com"
-sessions_count: 10          # number of browser sessions
+sessions_count: 10          # total number of browser sessions
+concurrent_sessions: 3      # how many browsers run at the same time
 session_duration: 45        # seconds each session stays on the page
 duration_seconds: 600       # hard stop after this many seconds total
 proxies:
