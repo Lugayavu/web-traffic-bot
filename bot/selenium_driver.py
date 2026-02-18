@@ -1,13 +1,12 @@
+import json
 import os
 import random
 import shutil
-import socket
 import subprocess
 import tempfile
 import time
 import urllib.parse
 import urllib.request
-import json
 from typing import Optional, Tuple
 
 from selenium import webdriver
@@ -78,40 +77,44 @@ _proxy_tz_cache: dict = {}
 
 def _get_proxy_timezone(proxy_url: Optional[str]) -> Optional[str]:
     """
-    Given a proxy URL like 'http://user:pass@1.2.3.4:8000', resolve the
-    timezone of the proxy's IP using the free ip-api.com service.
+    Determine the timezone of the proxy's **exit IP** by making a GeoIP
+    request *through* the proxy itself.
+
+    This gives the correct timezone even when the proxy IP and exit IP
+    are in different countries (e.g. residential or rotating proxies).
+
+    Uses the free ip-api.com service (no API key, 45 req/min).
+    Results are cached per proxy URL to avoid repeated lookups.
 
     Returns a timezone string (e.g. 'America/New_York') or None on failure.
-    Results are cached so each proxy IP is only looked up once.
     """
     if not proxy_url:
         return None
 
+    if proxy_url in _proxy_tz_cache:
+        return _proxy_tz_cache[proxy_url]
+
     try:
-        parsed = urllib.parse.urlparse(proxy_url)
-        host = parsed.hostname  # strips user:pass and port
-        if not host:
-            return None
+        # Build a proxy handler so the request goes through the proxy
+        proxy_handler = urllib.request.ProxyHandler({
+            "http":  proxy_url,
+            "https": proxy_url,
+        })
+        opener = urllib.request.build_opener(proxy_handler)
 
-        # Resolve hostname to IP if needed
-        try:
-            ip = socket.gethostbyname(host)
-        except socket.gaierror:
-            ip = host  # use as-is if resolution fails
-
-        if ip in _proxy_tz_cache:
-            return _proxy_tz_cache[ip]
-
-        # Free GeoIP lookup — no API key required, 45 req/min limit
-        url = f"http://ip-api.com/json/{ip}?fields=timezone,status"
-        req = urllib.request.Request(url, headers={"User-Agent": "web-traffic-bot/1.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        # Ask ip-api.com what IP it sees — this is the proxy's exit IP
+        req = urllib.request.Request(
+            "http://ip-api.com/json/?fields=timezone,status,query",
+            headers={"User-Agent": "web-traffic-bot/1.0"},
+        )
+        with opener.open(req, timeout=8) as resp:
             data = json.loads(resp.read().decode())
 
         if data.get("status") == "success" and data.get("timezone"):
             tz = data["timezone"]
-            _proxy_tz_cache[ip] = tz
-            logger.debug(f"Proxy {ip} → timezone: {tz}")
+            exit_ip = data.get("query", "?")
+            _proxy_tz_cache[proxy_url] = tz
+            logger.debug(f"Proxy exit IP {exit_ip} → timezone: {tz}")
             return tz
 
     except Exception as e:
