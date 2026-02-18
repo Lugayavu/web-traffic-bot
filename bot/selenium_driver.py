@@ -35,11 +35,13 @@ USER_AGENTS = [
 #   sudo apt install -y chromium chromium-driver                 # Ubuntu 22.04+
 
 # (browser_binary, chromedriver_binary) pairs that are known to be compatible.
+# NOTE: On Ubuntu 22.04+, /usr/bin/chromium-browser is a STUB that just says
+# "install the snap". We must NOT use it. The real apt binary is /usr/bin/chromium.
 _KNOWN_PAIRS = [
-    # Debian/Ubuntu apt package (20.04)
-    ("/usr/bin/chromium-browser",       "/usr/lib/chromium-browser/chromedriver"),
-    # Debian/Ubuntu apt package (22.04 non-snap)
+    # Debian/Ubuntu apt package (22.04+ non-snap) — check BEFORE chromium-browser
     ("/usr/bin/chromium",               "/usr/bin/chromedriver"),
+    # Debian/Ubuntu apt package (20.04) — only valid if it's a real binary, not a stub
+    ("/usr/bin/chromium-browser",       "/usr/lib/chromium-browser/chromedriver"),
     # Google Chrome (Debian package)
     ("/usr/bin/google-chrome-stable",   None),   # driver resolved separately
     ("/usr/bin/google-chrome",          None),
@@ -49,6 +51,12 @@ _KNOWN_PAIRS = [
 _SNAP_BROWSER_PATHS = [
     "/snap/bin/chromium",
     "/snap/chromium/current/usr/bin/chromium",
+]
+
+# Stub script paths — Ubuntu 22.04+ installs these as snap redirectors.
+# They are NOT real browsers and must be skipped.
+_STUB_PATHS = [
+    "/usr/bin/chromium-browser",   # Ubuntu 22.04+ stub → "install snap chromium"
 ]
 
 # Standalone driver candidates (used when browser is found but driver is None above)
@@ -68,9 +76,29 @@ _BROWSER_CANDIDATES = [
 ]
 
 
+def _is_snap_stub(path: str) -> bool:
+    """
+    Return True if *path* is the Ubuntu 22.04+ snap redirect stub.
+    The stub is a shell script that just prints 'install snap chromium'.
+    We detect it by reading the first 512 bytes and looking for 'snap'.
+    """
+    try:
+        with open(path, "rb") as fh:
+            header = fh.read(512).decode("utf-8", errors="ignore")
+        return "snap" in header.lower() and "install" in header.lower()
+    except Exception:
+        return False
+
+
 def _binary_exists(path: str) -> bool:
-    """Return True if *path* is an executable file."""
-    return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
+    """Return True if *path* is a real executable (not a snap stub)."""
+    if not (bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)):
+        return False
+    # Skip Ubuntu 22.04+ snap redirect stubs
+    if path in _STUB_PATHS and _is_snap_stub(path):
+        logger.debug(f"Skipping snap stub: {path}")
+        return False
+    return True
 
 
 def _find_on_path(candidates: list) -> Optional[str]:
