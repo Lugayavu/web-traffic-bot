@@ -1,5 +1,7 @@
-import yaml
+import copy
 import os
+
+import yaml
 
 DEFAULTS = {
     'sessions_count': 10,
@@ -16,7 +18,7 @@ class ConfigHandler:
 
     def __init__(self, config_file=None):
         self.config_file = config_file
-        self.config = dict(DEFAULTS)
+        self.config = copy.deepcopy(DEFAULTS)
         if config_file:
             self._load_config(config_file)
 
