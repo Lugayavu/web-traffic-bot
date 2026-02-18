@@ -1,6 +1,8 @@
+import os
 import random
 import shutil
 import subprocess
+import tempfile
 import time
 from typing import Optional, Tuple
 
@@ -61,7 +63,6 @@ _BROWSER_CANDIDATES = [
 
 def _binary_exists(path: str) -> bool:
     """Return True if *path* is an executable file."""
-    import os
     return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
 
 
@@ -197,7 +198,6 @@ class SeleniumDriver:
         # Use a dedicated temp directory for each Chrome instance so
         # multiple sessions don't collide, and disable the remote
         # debugging port that causes the crash.
-        import tempfile
         self._tmp_dir = tempfile.mkdtemp(prefix="chrome_tmp_")
         options.add_argument(f"--user-data-dir={self._tmp_dir}")
         options.add_argument("--remote-debugging-port=0")  # 0 = OS picks a free port
@@ -304,9 +304,8 @@ class SeleniumDriver:
             logger.debug("WebDriver closed")
         # Clean up the temporary user-data-dir to avoid disk accumulation
         if self._tmp_dir:
-            import shutil as _shutil
             try:
-                _shutil.rmtree(self._tmp_dir, ignore_errors=True)
+                shutil.rmtree(self._tmp_dir, ignore_errors=True)
             except Exception:
                 pass
             self._tmp_dir = None
