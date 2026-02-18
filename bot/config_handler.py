@@ -5,6 +5,7 @@ import yaml
 
 DEFAULTS = {
     'sessions_count': 10,
+    'concurrent_sessions': 1,
     'session_duration': 45,
     'duration_seconds': 600,
     'proxies': [],
@@ -59,6 +60,14 @@ class ConfigHandler:
     @sessions_count.setter
     def sessions_count(self, value):
         self.config['sessions_count'] = int(value)
+
+    @property
+    def concurrent_sessions(self):
+        return max(1, int(self.config.get('concurrent_sessions', DEFAULTS['concurrent_sessions'])))
+
+    @concurrent_sessions.setter
+    def concurrent_sessions(self, value):
+        self.config['concurrent_sessions'] = max(1, int(value))
 
     @property
     def session_duration(self):

@@ -1,4 +1,6 @@
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from bot.logger import setup_logger
 from bot.proxy_manager import ProxyManager
@@ -14,6 +16,9 @@ logger = setup_logger(__name__)
 # ---------------------------------------------------------------------------
 _STOP_REQUESTED: bool = False
 
+# Thread-safe counters lock
+_counter_lock = threading.Lock()
+
 
 def request_stop() -> None:
     """Ask the currently-running bot to stop after the current session."""
@@ -22,7 +27,14 @@ def request_stop() -> None:
 
 
 class TrafficBot:
-    """Main traffic bot orchestrator."""
+    """
+    Main traffic bot orchestrator.
+
+    Supports concurrent sessions: up to `concurrent_sessions` browser
+    windows run simultaneously. As each one finishes, a new one starts
+    immediately so the concurrency level is always maintained until all
+    `sessions_count` sessions have been dispatched.
+    """
 
     def __init__(self, config):
         self.config = config
@@ -38,41 +50,85 @@ class TrafficBot:
         global _STOP_REQUESTED
         _STOP_REQUESTED = False  # reset on each run
 
+        concurrency = max(1, self.config.concurrent_sessions)
+
         logger.info("=" * 60)
         logger.info("WEB TRAFFIC BOT STARTED")
         logger.info("=" * 60)
-        logger.info(f"Target URL      : {self.config.target_url}")
-        logger.info(f"Total Sessions  : {self.config.sessions_count}")
-        logger.info(f"Session Duration: {self.config.session_duration}s")
-        logger.info(f"Total Duration  : {self.config.duration_seconds}s")
-        logger.info(f"Proxies         : {len(self.config.proxies)}")
-        logger.info(f"Headless        : {self.config.headless}")
+        logger.info(f"Target URL          : {self.config.target_url}")
+        logger.info(f"Total Sessions      : {self.config.sessions_count}")
+        logger.info(f"Concurrent Sessions : {concurrency}")
+        logger.info(f"Session Duration    : {self.config.session_duration}s")
+        logger.info(f"Total Duration      : {self.config.duration_seconds}s")
+        logger.info(f"Proxies             : {len(self.config.proxies)}")
+        logger.info(f"Headless            : {self.config.headless}")
         logger.info("=" * 60)
 
         start_time = time.time()
 
-        for session_num in range(1, self.config.sessions_count + 1):
-            # Check hard time limit
-            elapsed = time.time() - start_time
-            if elapsed > self.config.duration_seconds:
-                logger.info(f"Total duration reached ({self.config.duration_seconds}s). Stopping.")
-                break
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {}
+            session_num = 0
 
-            # Check dashboard stop request
-            if _STOP_REQUESTED:
-                logger.info("Stop requested. Stopping after current session.")
-                break
+            # Fill the pool up to concurrency
+            while session_num < self.config.sessions_count:
+                # Check hard time limit
+                if time.time() - start_time > self.config.duration_seconds:
+                    logger.info(f"Total duration reached ({self.config.duration_seconds}s). Stopping.")
+                    break
 
-            try:
-                logger.info(f"\n[Session {session_num}/{self.config.sessions_count}]")
-                self._run_session(session_num)
-                self.sessions_completed += 1
-            except Exception as e:
-                logger.error(f"Session {session_num} failed: {e}")
-                self.sessions_failed += 1
+                # Check stop request
+                if _STOP_REQUESTED:
+                    logger.info("Stop requested. No more sessions will be started.")
+                    break
 
-            if session_num < self.config.sessions_count:
-                time.sleep(2)
+                # Submit up to `concurrency` sessions at once
+                while (len(futures) < concurrency
+                       and session_num < self.config.sessions_count
+                       and not _STOP_REQUESTED):
+                    session_num += 1
+                    future = pool.submit(self._run_session, session_num)
+                    futures[future] = session_num
+                    logger.info(f"[Session {session_num}/{self.config.sessions_count}] started "
+                                f"(active: {len(futures)})")
+
+                # Wait for at least one to finish before submitting more
+                if futures:
+                    done_futures = []
+                    # Use a short timeout so we can check stop/time limits
+                    for f in list(futures.keys()):
+                        if f.done():
+                            done_futures.append(f)
+
+                    if not done_futures:
+                        # Nothing done yet — wait briefly
+                        time.sleep(0.5)
+                        continue
+
+                    for f in done_futures:
+                        snum = futures.pop(f)
+                        try:
+                            f.result()  # re-raise any exception
+                            with _counter_lock:
+                                self.sessions_completed += 1
+                            logger.info(f"[Session {snum}] completed ✓")
+                        except Exception as e:
+                            with _counter_lock:
+                                self.sessions_failed += 1
+                            logger.error(f"[Session {snum}] failed: {e}")
+
+            # Wait for all remaining in-flight sessions to finish
+            logger.info("Waiting for in-flight sessions to finish...")
+            for f, snum in list(futures.items()):
+                try:
+                    f.result()
+                    with _counter_lock:
+                        self.sessions_completed += 1
+                    logger.info(f"[Session {snum}] completed ✓")
+                except Exception as e:
+                    with _counter_lock:
+                        self.sessions_failed += 1
+                    logger.error(f"[Session {snum}] failed: {e}")
 
         self._print_summary(time.time() - start_time)
 
@@ -80,12 +136,13 @@ class TrafficBot:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _run_session(self, session_num):
+    def _run_session(self, session_num: int):
+        """Run a single browser session. Called from a thread pool worker."""
         driver = None
         try:
             proxy = self.proxy_manager.get_next_proxy()
             if proxy:
-                logger.info(f"Using proxy: {proxy}")
+                logger.info(f"[Session {session_num}] Using proxy: {proxy}")
 
             driver = SeleniumDriver(
                 headless=self.config.headless,
@@ -97,12 +154,11 @@ class TrafficBot:
             simulator = SessionSimulator(driver.driver, self.config.session_duration)
             simulator.simulate_engagement()
 
-            logger.info(f"Session {session_num} completed successfully")
         finally:
             if driver:
                 driver.quit()
 
-    def _print_summary(self, duration):
+    def _print_summary(self, duration: float):
         total = self.sessions_completed + self.sessions_failed
         logger.info("\n" + "=" * 60)
         logger.info("EXECUTION SUMMARY")

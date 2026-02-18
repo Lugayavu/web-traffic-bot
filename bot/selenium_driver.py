@@ -14,13 +14,54 @@ from bot.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# A small pool of realistic desktop user-agents to rotate through
+# ---------------------------------------------------------------------------
+# Device fingerprint pools — each session picks randomly from these
+# ---------------------------------------------------------------------------
+
+# Realistic desktop user-agents across different OS / browser combinations
 USER_AGENTS = [
+    # Windows Chrome
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    # macOS Chrome
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    # Linux Chrome
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    # Windows Firefox
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    # macOS Safari
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
+    # macOS Firefox
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0",
+    # Windows Edge
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
+]
+
+# Common desktop screen resolutions
+_SCREEN_SIZES = [
+    "1920,1080",
+    "1366,768",
+    "1440,900",
+    "1536,864",
+    "1280,800",
+    "1600,900",
+    "2560,1440",
+    "1280,1024",
+]
+
+# Accept-Language header values
+_LANGUAGES = [
+    "en-US,en;q=0.9",
+    "en-GB,en;q=0.9",
+    "en-CA,en;q=0.9",
+    "en-AU,en;q=0.8,en;q=0.7",
+    "fr-FR,fr;q=0.9,en;q=0.8",
+    "de-DE,de;q=0.9,en;q=0.8",
+    "es-ES,es;q=0.9,en;q=0.8",
 ]
 
 # ---------------------------------------------------------------------------
@@ -282,7 +323,7 @@ class SeleniumDriver:
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins")
-        options.add_argument("--window-size=1920,1080")
+        # Note: window size is set randomly in the fingerprint section below
 
         # Fix "DevToolsActivePort file doesn't exist" on servers:
         # Use a dedicated temp directory for each Chrome instance so
@@ -309,10 +350,33 @@ class SeleniumDriver:
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
 
-        # Rotate user-agent
+        # ----------------------------------------------------------------
+        # Device fingerprint randomisation
+        # Each session gets a different combination of UA, screen size,
+        # language, and timezone to look like a different device/user.
+        # ----------------------------------------------------------------
+
+        # Random user-agent
         ua = random.choice(USER_AGENTS)
         options.add_argument(f"--user-agent={ua}")
         logger.debug(f"User-agent: {ua}")
+
+        # Random screen resolution (overrides the fixed 1920,1080 above)
+        screen = random.choice(_SCREEN_SIZES)
+        w, h = screen.split(",")
+        options.add_argument(f"--window-size={w},{h}")
+
+        # Random Accept-Language
+        lang = random.choice(_LANGUAGES)
+        options.add_argument(f"--lang={lang}")
+
+        # Randomise timezone offset slightly (±2 hours from UTC)
+        tz_offset = random.choice([
+            "America/New_York", "America/Chicago", "America/Los_Angeles",
+            "Europe/London", "Europe/Paris", "Europe/Berlin",
+            "Asia/Tokyo", "Asia/Singapore", "Australia/Sydney",
+        ])
+        options.add_argument(f"--timezone={tz_offset}")
 
         if self.proxy:
             logger.info(f"Setting proxy: {self.proxy}")

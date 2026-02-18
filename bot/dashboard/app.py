@@ -34,6 +34,7 @@ _log_queue: queue.Queue = queue.Queue(maxsize=500)
 _current_config: dict = {
     "target_url": "",
     "sessions_count": 10,
+    "concurrent_sessions": 1,
     "session_duration": 45,
     "duration_seconds": 600,
     "proxies": [],
@@ -101,6 +102,7 @@ def save_config():
     # Sanitise / coerce types
     _current_config["target_url"] = str(data.get("target_url", "")).strip()
     _current_config["sessions_count"] = int(data.get("sessions_count", 10))
+    _current_config["concurrent_sessions"] = max(1, int(data.get("concurrent_sessions", 1)))
     _current_config["session_duration"] = int(data.get("session_duration", 45))
     _current_config["duration_seconds"] = int(data.get("duration_seconds", 600))
     _current_config["headless"] = bool(data.get("headless", True))

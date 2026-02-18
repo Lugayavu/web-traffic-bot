@@ -313,15 +313,21 @@
 
       <div class="row-2">
         <div class="form-group">
-          <label>Sessions</label>
+          <label>Total Sessions</label>
           <input type="number" id="sessions_count" min="1" max="9999"
                  value="{{ config.sessions_count }}" />
         </div>
         <div class="form-group">
-          <label>Session Duration (s)</label>
-          <input type="number" id="session_duration" min="5" max="3600"
-                 value="{{ config.session_duration }}" />
+          <label>Concurrent Sessions</label>
+          <input type="number" id="concurrent_sessions" min="1" max="20"
+                 value="{{ config.concurrent_sessions }}" />
         </div>
+      </div>
+
+      <div class="form-group">
+        <label>Session Duration (s)</label>
+        <input type="number" id="session_duration" min="5" max="3600"
+               value="{{ config.session_duration }}" />
       </div>
 
       <div class="form-group">
@@ -432,13 +438,14 @@ function appendLog(line) {
 /* ------------------------------------------------------------------ */
 function getFormConfig() {
   return {
-    target_url:       $('target_url').value.trim(),
-    sessions_count:   parseInt($('sessions_count').value) || 10,
-    session_duration: parseInt($('session_duration').value) || 45,
-    duration_seconds: parseInt($('duration_seconds').value) || 600,
-    proxies:          $('proxies').value.trim(),
-    headless:         $('headless').checked,
-    chromium_path:    $('chromium_path').value.trim(),
+    target_url:          $('target_url').value.trim(),
+    sessions_count:      parseInt($('sessions_count').value) || 10,
+    concurrent_sessions: parseInt($('concurrent_sessions').value) || 1,
+    session_duration:    parseInt($('session_duration').value) || 45,
+    duration_seconds:    parseInt($('duration_seconds').value) || 600,
+    proxies:             $('proxies').value.trim(),
+    headless:            $('headless').checked,
+    chromium_path:       $('chromium_path').value.trim(),
   };
 }
 
