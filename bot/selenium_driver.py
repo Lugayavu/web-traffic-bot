@@ -121,6 +121,35 @@ def _get_version(binary: str) -> Optional[str]:
         return None
 
 
+def _get_major_version(binary: str) -> Optional[int]:
+    """Return the major version integer of a Chrome/Chromium binary, or None."""
+    ver = _get_version(binary)
+    if not ver:
+        return None
+    for part in ver.split():
+        if part[0].isdigit():
+            try:
+                return int(part.split(".")[0])
+            except ValueError:
+                pass
+    return None
+
+
+def _versions_match(browser_bin: str, driver_bin: str) -> bool:
+    """Return True if browser and driver have the same major version."""
+    bv = _get_major_version(browser_bin)
+    dv = _get_major_version(driver_bin)
+    if bv is None or dv is None:
+        return True  # can't check — assume OK
+    if bv != dv:
+        logger.warning(
+            f"Version mismatch: browser={bv}, chromedriver={dv}. "
+            "Will use webdriver-manager to download the correct driver."
+        )
+        return False
+    return True
+
+
 def _resolve_browser_and_driver(
     explicit_browser: Optional[str] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
@@ -167,12 +196,21 @@ def _resolve_browser_and_driver(
                 # Browser found but driver not specified — search PATH
                 driver = _find_on_path(_DRIVER_CANDIDATES)
             if driver and _binary_exists(driver):
-                logger.info(f"Browser binary : {browser}")
-                logger.info(f"ChromeDriver   : {driver}")
-                ver = _get_version(browser)
-                if ver:
-                    logger.info(f"Browser version: {ver}")
-                return browser, driver
+                # Verify versions match before committing to this pair
+                if _versions_match(browser, driver):
+                    logger.info(f"Browser binary : {browser}")
+                    logger.info(f"ChromeDriver   : {driver}")
+                    ver = _get_version(browser)
+                    if ver:
+                        logger.info(f"Browser version: {ver}")
+                    return browser, driver
+                else:
+                    # Version mismatch — skip system driver, use webdriver-manager
+                    logger.info(f"Browser binary : {browser}")
+                    ver = _get_version(browser)
+                    if ver:
+                        logger.info(f"Browser version: {ver}")
+                    return browser, None
             elif driver is None:
                 # Browser found, no driver anywhere — return browser only
                 # (will fall back to webdriver-manager)
@@ -294,25 +332,13 @@ class SeleniumDriver:
             if driver_bin:
                 service = Service(driver_bin)
             else:
-                # Fall back to webdriver-manager (requires internet access)
-                logger.warning(
-                    "No system chromedriver found — falling back to webdriver-manager. "
-                    "This requires internet access."
+                # No matching system chromedriver — use webdriver-manager to download
+                # the correct version for the installed browser.
+                logger.info(
+                    "No matching system chromedriver found — using webdriver-manager "
+                    "to download the correct version. This requires internet access."
                 )
-                try:
-                    from webdriver_manager.chrome import ChromeDriverManager
-                    try:
-                        from webdriver_manager.core.os_manager import ChromeType
-                        service = Service(
-                            ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
-                        )
-                    except Exception:
-                        service = Service(ChromeDriverManager().install())
-                except ImportError:
-                    raise RuntimeError(
-                        "chromedriver not found and webdriver-manager is not installed.\n"
-                        "Fix: sudo apt install -y chromium-driver"
-                    )
+                service = self._get_webdriver_manager_service(browser_bin)
 
             self.driver = webdriver.Chrome(service=service, options=options)
             logger.info("Selenium WebDriver initialised successfully")
@@ -324,17 +350,42 @@ class SeleniumDriver:
                 self._tmp_dir = None
             logger.error(
                 f"WebDriver initialisation failed: {e}\n"
-                "Quick fix for Ubuntu with snap Chromium:\n"
-                "  sudo snap install chromium          # installs browser + driver together\n"
-                "  chromium --version                  # verify\n"
-                "  chromium.chromedriver --version     # verify driver matches\n"
-                "\n"
-                "Quick fix for Ubuntu apt Chromium:\n"
-                "  sudo apt install -y chromium chromium-driver\n"
-                "\n"
-                "Or set 'Chromium Path' in the dashboard to the full path of your browser binary."
+                "Troubleshooting:\n"
+                "  1. Check browser version:   chromium-browser --version\n"
+                "  2. Check driver version:    chromedriver --version\n"
+                "  3. If versions mismatch, the bot will auto-download the correct driver\n"
+                "     via webdriver-manager (requires internet access).\n"
+                "  4. Or set 'Chromium Path' in the dashboard to your browser binary path."
             )
             raise
+
+    @staticmethod
+    def _get_webdriver_manager_service(browser_bin: Optional[str]) -> Service:
+        """Download and return a Service using webdriver-manager."""
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager
+        except ImportError:
+            raise RuntimeError(
+                "webdriver-manager is not installed. "
+                "Run: pip install webdriver-manager"
+            )
+
+        # Use ChromeType.CHROMIUM when the browser is Chromium (not Google Chrome)
+        is_chromium = browser_bin and (
+            "chromium" in browser_bin.lower()
+        )
+        if is_chromium:
+            try:
+                from webdriver_manager.core.os_manager import ChromeType
+                logger.info("Downloading chromedriver for Chromium via webdriver-manager...")
+                return Service(
+                    ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+                )
+            except Exception as e:
+                logger.warning(f"ChromeType.CHROMIUM download failed ({e}), trying generic...")
+
+        logger.info("Downloading chromedriver via webdriver-manager...")
+        return Service(ChromeDriverManager().install())
 
     # ------------------------------------------------------------------
     # Navigation
