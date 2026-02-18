@@ -210,7 +210,7 @@
     /* ------------------------------------------------------------------ */
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: .75rem;
       margin-bottom: 1.5rem;
     }
@@ -367,15 +367,19 @@
     <div class="stats-row">
       <div class="stat-card">
         <div class="val" id="stat-completed">—</div>
-        <div class="lbl">Sessions Completed</div>
+        <div class="lbl">✅ Completed</div>
       </div>
       <div class="stat-card">
         <div class="val" id="stat-failed" style="color:var(--red)">—</div>
-        <div class="lbl">Sessions Failed</div>
+        <div class="lbl">❌ Failed</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-progress" style="color:var(--accent)">—</div>
+        <div class="lbl">Progress</div>
       </div>
       <div class="stat-card">
         <div class="val" id="stat-elapsed" style="color:var(--yellow)">—</div>
-        <div class="lbl">Elapsed</div>
+        <div class="lbl">⏱ Elapsed</div>
       </div>
     </div>
 
@@ -499,6 +503,7 @@ function startElapsedTimer() {
   _elapsedStart = Date.now();
   $('stat-completed').textContent = '0';
   $('stat-failed').textContent = '0';
+  $('stat-progress').textContent = '0 / ?';
   clearInterval(_elapsedInterval);
   _elapsedInterval = setInterval(() => {
     const s = Math.floor((Date.now() - _elapsedStart) / 1000);
@@ -519,9 +524,27 @@ async function pollStatus() {
   } catch (_) {}
 }
 
+async function pollStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const data = await r.json();
+    if (data.completed !== undefined) {
+      $('stat-completed').textContent = data.completed;
+    }
+    if (data.failed !== undefined) {
+      $('stat-failed').textContent = data.failed;
+    }
+    if (data.total !== undefined && data.total > 0) {
+      const done = data.completed + data.failed;
+      $('stat-progress').textContent = `${done} / ${data.total}`;
+    }
+  } catch (_) {}
+}
+
 // Poll every 3 seconds
-setInterval(pollStatus, 3000);
+setInterval(() => { pollStatus(); pollStats(); }, 3000);
 pollStatus();
+pollStats();
 
 /* ------------------------------------------------------------------ */
 /* Live log via SSE                                                     */
@@ -532,12 +555,6 @@ evtSource.onmessage = e => {
   const line = e.data;
   if (!line || line.startsWith(':')) return;  // keep-alive ping
   appendLog(line);
-
-  // Parse session stats from log lines
-  const mComp = line.match(/Sessions Completed\s*:\s*(\d+)/i);
-  const mFail  = line.match(/Sessions Failed\s*:\s*(\d+)/i);
-  if (mComp) $('stat-completed').textContent = mComp[1];
-  if (mFail) $('stat-failed').textContent    = mFail[1];
 };
 
 evtSource.onerror = () => {

@@ -26,6 +26,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # ---------------------------------------------------------------------------
 
 _bot_thread: Optional[threading.Thread] = None
+_bot_instance = None   # live TrafficBot reference for real-time stats
 _bot_lock = threading.Lock()
 _log_queue: queue.Queue = queue.Queue(maxsize=500)
 
@@ -120,6 +121,18 @@ def bot_status():
     return jsonify({"running": running})
 
 
+@app.route("/api/stats", methods=["GET"])
+def bot_stats():
+    """Return live session counters from the running bot."""
+    if _bot_instance is not None:
+        return jsonify({
+            "completed": _bot_instance.sessions_completed,
+            "failed":    _bot_instance.sessions_failed,
+            "total":     _bot_instance.config.sessions_count,
+        })
+    return jsonify({"completed": 0, "failed": 0, "total": 0})
+
+
 @app.route("/api/start", methods=["POST"])
 def start_bot():
     global _bot_thread
@@ -142,11 +155,15 @@ def start_bot():
         config.config.update(_current_config)
 
         def _run():
+            global _bot_instance
             try:
                 bot = TrafficBot(config)
+                _bot_instance = bot
                 bot.run()
             except Exception as exc:
                 logging.getLogger(__name__).error(f"Bot crashed: {exc}")
+            finally:
+                _bot_instance = None
 
         _bot_thread = threading.Thread(target=_run, daemon=True, name="bot-worker")
         _bot_thread.start()
