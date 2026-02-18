@@ -266,6 +266,10 @@ class SeleniumDriver:
             logger.info("Selenium WebDriver initialised successfully")
 
         except Exception as e:
+            # Clean up the temp dir if Chrome failed to start
+            if self._tmp_dir:
+                shutil.rmtree(self._tmp_dir, ignore_errors=True)
+                self._tmp_dir = None
             logger.error(
                 f"WebDriver initialisation failed: {e}\n"
                 "Quick fix for Ubuntu with snap Chromium:\n"
