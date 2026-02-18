@@ -27,14 +27,15 @@ USER_AGENTS = [
 # Known browser / driver binary locations (checked in order)
 # ---------------------------------------------------------------------------
 
+# IMPORTANT: Snap Chromium CANNOT be used with Selenium.
+# The snap sandbox prevents chromedriver from launching the snap binary
+# as a subprocess. Use the apt version instead:
+#   sudo snap remove chromium
+#   sudo apt install -y chromium-browser chromium-chromedriver   # Ubuntu 20.04
+#   sudo apt install -y chromium chromium-driver                 # Ubuntu 22.04+
+
 # (browser_binary, chromedriver_binary) pairs that are known to be compatible.
-# Snap Chromium ships its own chromedriver — they MUST be used together.
 _KNOWN_PAIRS = [
-    # Snap Chromium (Ubuntu 22.04+) — browser and driver must come from the same snap
-    ("/snap/bin/chromium",              "/snap/bin/chromium.chromedriver"),
-    # Snap alternative paths
-    ("/snap/chromium/current/usr/bin/chromium",
-     "/snap/chromium/current/usr/lib/chromium-browser/chromedriver"),
     # Debian/Ubuntu apt package (20.04)
     ("/usr/bin/chromium-browser",       "/usr/lib/chromium-browser/chromedriver"),
     # Debian/Ubuntu apt package (22.04 non-snap)
@@ -42,6 +43,12 @@ _KNOWN_PAIRS = [
     # Google Chrome (Debian package)
     ("/usr/bin/google-chrome-stable",   None),   # driver resolved separately
     ("/usr/bin/google-chrome",          None),
+]
+
+# Snap binary paths — detected to show a helpful error, NOT used for launching
+_SNAP_BROWSER_PATHS = [
+    "/snap/bin/chromium",
+    "/snap/chromium/current/usr/bin/chromium",
 ]
 
 # Standalone driver candidates (used when browser is found but driver is None above)
@@ -100,6 +107,23 @@ def _resolve_browser_and_driver(
     3. Search PATH for any browser candidate and any driver candidate
        independently (last resort — may mismatch on snap systems).
     """
+    # --- 0. Snap Chromium detection — fail fast with a clear message ---
+    for snap_path in _SNAP_BROWSER_PATHS:
+        if _binary_exists(snap_path):
+            raise RuntimeError(
+                "Snap Chromium detected but it CANNOT be used with Selenium.\n"
+                "The snap sandbox prevents chromedriver from launching the browser.\n"
+                "\n"
+                "Fix — replace snap Chromium with the apt version:\n"
+                "  sudo snap remove chromium\n"
+                "  sudo apt update\n"
+                "  sudo apt install -y chromium chromium-driver        # Ubuntu 22.04+\n"
+                "  # OR for Ubuntu 20.04:\n"
+                "  sudo apt install -y chromium-browser chromium-chromedriver\n"
+                "\n"
+                "Then restart the dashboard."
+            )
+
     # --- 1. Explicit browser path ---
     if explicit_browser and _binary_exists(explicit_browser):
         driver = _find_on_path(_DRIVER_CANDIDATES)
