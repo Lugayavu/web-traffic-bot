@@ -63,6 +63,7 @@ class ConfigHandler:
 
     @property
     def concurrent_sessions(self):
+        # Minimum 1; no upper cap — user is responsible for their server's RAM
         return max(1, int(self.config.get('concurrent_sessions', DEFAULTS['concurrent_sessions'])))
 
     @concurrent_sessions.setter

@@ -1,9 +1,13 @@
 import os
 import random
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
+import urllib.parse
+import urllib.request
+import json
 from typing import Optional, Tuple
 
 from selenium import webdriver
@@ -63,6 +67,58 @@ _LANGUAGES = [
     "de-DE,de;q=0.9,en;q=0.8",
     "es-ES,es;q=0.9,en;q=0.8",
 ]
+
+# ---------------------------------------------------------------------------
+# Proxy-aware timezone lookup
+# ---------------------------------------------------------------------------
+
+# Cache: proxy_host → timezone string (avoids repeated GeoIP calls)
+_proxy_tz_cache: dict = {}
+
+
+def _get_proxy_timezone(proxy_url: Optional[str]) -> Optional[str]:
+    """
+    Given a proxy URL like 'http://user:pass@1.2.3.4:8000', resolve the
+    timezone of the proxy's IP using the free ip-api.com service.
+
+    Returns a timezone string (e.g. 'America/New_York') or None on failure.
+    Results are cached so each proxy IP is only looked up once.
+    """
+    if not proxy_url:
+        return None
+
+    try:
+        parsed = urllib.parse.urlparse(proxy_url)
+        host = parsed.hostname  # strips user:pass and port
+        if not host:
+            return None
+
+        # Resolve hostname to IP if needed
+        try:
+            ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            ip = host  # use as-is if resolution fails
+
+        if ip in _proxy_tz_cache:
+            return _proxy_tz_cache[ip]
+
+        # Free GeoIP lookup — no API key required, 45 req/min limit
+        url = f"http://ip-api.com/json/{ip}?fields=timezone,status"
+        req = urllib.request.Request(url, headers={"User-Agent": "web-traffic-bot/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+
+        if data.get("status") == "success" and data.get("timezone"):
+            tz = data["timezone"]
+            _proxy_tz_cache[ip] = tz
+            logger.debug(f"Proxy {ip} → timezone: {tz}")
+            return tz
+
+    except Exception as e:
+        logger.debug(f"Proxy timezone lookup failed: {e}")
+
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Known browser / driver binary locations (checked in order)
@@ -370,13 +426,16 @@ class SeleniumDriver:
         lang = random.choice(_LANGUAGES)
         options.add_argument(f"--lang={lang}")
 
-        # Randomise timezone offset slightly (±2 hours from UTC)
-        tz_offset = random.choice([
+        # Timezone: use the proxy's geographic timezone if available,
+        # otherwise fall back to a random one from the pool.
+        _FALLBACK_TIMEZONES = [
             "America/New_York", "America/Chicago", "America/Los_Angeles",
             "Europe/London", "Europe/Paris", "Europe/Berlin",
             "Asia/Tokyo", "Asia/Singapore", "Australia/Sydney",
-        ])
-        options.add_argument(f"--timezone={tz_offset}")
+        ]
+        tz = _get_proxy_timezone(self.proxy) or random.choice(_FALLBACK_TIMEZONES)
+        options.add_argument(f"--timezone={tz}")
+        logger.debug(f"Timezone: {tz}")
 
         if self.proxy:
             logger.info(f"Setting proxy: {self.proxy}")
