@@ -169,6 +169,7 @@ class SeleniumDriver:
         self.proxy = proxy
         self.chromium_path = chromium_path
         self.driver = None
+        self._tmp_dir: Optional[str] = None
         self._setup_driver()
 
     # ------------------------------------------------------------------
@@ -182,13 +183,38 @@ class SeleniumDriver:
             options.add_argument("--headless=new")
             logger.info("Running in headless mode")
 
-        # Required for running as root / in Docker / on servers
+        # ----------------------------------------------------------------
+        # Flags required for stable operation on headless servers / Docker
+        # ----------------------------------------------------------------
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins")
         options.add_argument("--window-size=1920,1080")
+
+        # Fix "DevToolsActivePort file doesn't exist" on servers:
+        # Use a dedicated temp directory for each Chrome instance so
+        # multiple sessions don't collide, and disable the remote
+        # debugging port that causes the crash.
+        import tempfile
+        self._tmp_dir = tempfile.mkdtemp(prefix="chrome_tmp_")
+        options.add_argument(f"--user-data-dir={self._tmp_dir}")
+        options.add_argument("--remote-debugging-port=0")  # 0 = OS picks a free port
+
+        # Additional stability flags for server environments
+        options.add_argument("--disable-setuid-sandbox")
+        options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--disable-background-networking")
+        options.add_argument("--disable-default-apps")
+        options.add_argument("--disable-sync")
+        options.add_argument("--disable-translate")
+        options.add_argument("--metrics-recording-only")
+        options.add_argument("--mute-audio")
+        options.add_argument("--no-first-run")
+        options.add_argument("--safebrowsing-disable-auto-update")
+        options.add_argument("--single-process")   # helps in low-memory VPS environments
+
         # Suppress "Chrome is being controlled by automated software" bar
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
@@ -276,3 +302,11 @@ class SeleniumDriver:
             self.driver.quit()
             self.driver = None
             logger.debug("WebDriver closed")
+        # Clean up the temporary user-data-dir to avoid disk accumulation
+        if self._tmp_dir:
+            import shutil as _shutil
+            try:
+                _shutil.rmtree(self._tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+            self._tmp_dir = None
