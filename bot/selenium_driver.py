@@ -67,6 +67,13 @@ _LANGUAGES = [
     "es-ES,es;q=0.9,en;q=0.8",
 ]
 
+# Fallback timezones when no proxy is configured or GeoIP lookup fails
+_FALLBACK_TIMEZONES = [
+    "America/New_York", "America/Chicago", "America/Los_Angeles",
+    "Europe/London", "Europe/Paris", "Europe/Berlin",
+    "Asia/Tokyo", "Asia/Singapore", "Australia/Sydney",
+]
+
 # ---------------------------------------------------------------------------
 # Proxy-aware timezone lookup
 # ---------------------------------------------------------------------------
@@ -430,12 +437,7 @@ class SeleniumDriver:
         options.add_argument(f"--lang={lang}")
 
         # Timezone: use the proxy's geographic timezone if available,
-        # otherwise fall back to a random one from the pool.
-        _FALLBACK_TIMEZONES = [
-            "America/New_York", "America/Chicago", "America/Los_Angeles",
-            "Europe/London", "Europe/Paris", "Europe/Berlin",
-            "Asia/Tokyo", "Asia/Singapore", "Australia/Sydney",
-        ]
+        # otherwise fall back to a random one from the module-level pool.
         tz = _get_proxy_timezone(self.proxy) or random.choice(_FALLBACK_TIMEZONES)
         options.add_argument(f"--timezone={tz}")
         logger.debug(f"Timezone: {tz}")

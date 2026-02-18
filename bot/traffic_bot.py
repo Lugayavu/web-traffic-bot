@@ -1,6 +1,6 @@
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 from bot.logger import setup_logger
 from bot.proxy_manager import ProxyManager
