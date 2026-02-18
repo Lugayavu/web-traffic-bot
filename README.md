@@ -283,6 +283,57 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ---
 
+## Troubleshooting
+
+### WebDriver initialisation failure
+
+**Symptom:** Bot starts then immediately fails with a WebDriver error in the live log.
+
+**Most common cause on Ubuntu servers:** `chromium-browser` is installed but `chromedriver` is not, or the versions don't match.
+
+**Fix:**
+
+```bash
+# Ubuntu 22.04 / 24.04
+sudo apt install -y chromium chromium-driver
+
+# Ubuntu 20.04
+sudo apt install -y chromium-browser chromium-chromedriver
+
+# Verify both are installed and versions match
+chromium --version        # or: chromium-browser --version
+chromedriver --version
+```
+
+Both version numbers should start with the same major version (e.g. both `124.x.x.x`).
+
+**If you have Google Chrome instead of Chromium:**
+
+```bash
+# Install the matching chromedriver via webdriver-manager
+pip install webdriver-manager
+```
+
+The bot will fall back to `webdriver-manager` automatically if no system `chromedriver` is found.
+
+**If Chrome/Chromium is installed in a non-standard path:**
+
+Set the **Chromium Path** field in the dashboard (or `chromium_path` in the config file) to the full path of the browser binary, e.g. `/usr/bin/chromium`.
+
+---
+
+### Bot crashes silently on a server
+
+Make sure **Headless mode is ON**. Servers have no display — running without headless will crash immediately.
+
+---
+
+### `--no-sandbox` warning
+
+The bot already passes `--no-sandbox` which is required when running as root or in Docker. This is safe for a controlled testing environment.
+
+---
+
 ## Disclaimer
 
 This tool is intended **only for testing your own websites**.  
