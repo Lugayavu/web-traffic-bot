@@ -195,6 +195,94 @@ web-traffic-bot/
 
 ---
 
+## Deploying on a server
+
+### 1 — Install system dependencies
+
+```bash
+# Ubuntu / Debian
+bash scripts/ubuntu_setup.sh
+```
+
+This installs Python 3, pip, venv, and Chromium.
+
+### 2 — Install the bot
+
+```bash
+git clone https://github.com/Lugayavu/web-traffic-bot.git
+cd web-traffic-bot
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+```
+
+### 3 — Run the dashboard (foreground test)
+
+```bash
+# Bind to all interfaces so you can reach it from your browser
+web-traffic-bot --dashboard --host 0.0.0.0 --port 5000
+```
+
+Access it at `http://<your-server-ip>:5000`
+
+> **Firewall:** make sure port 5000 is open in your server's firewall / security group.
+
+### 4 — Keep it running with systemd (recommended)
+
+Create `/etc/systemd/system/web-traffic-bot.service`:
+
+```ini
+[Unit]
+Description=Web Traffic Bot Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_LINUX_USER
+WorkingDirectory=/path/to/web-traffic-bot
+ExecStart=/path/to/web-traffic-bot/venv/bin/web-traffic-bot --dashboard --host 0.0.0.0 --port 5000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then enable and start it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable web-traffic-bot
+sudo systemctl start  web-traffic-bot
+sudo systemctl status web-traffic-bot   # check it's running
+```
+
+### 5 — Headless mode on a server
+
+Servers have no display. Always keep **Headless mode ON** (the toggle in the dashboard, or `headless: true` in the config file). The bot uses `--headless=new` which works without a display server.
+
+### 6 — Optional: put Nginx in front (clean URL, no port)
+
+If you want `http://yourserver.com/web-traffic-bot/` instead of `:5000`:
+
+```nginx
+# /etc/nginx/sites-available/default  (inside the server {} block)
+location /web-traffic-bot/ {
+    proxy_pass         http://127.0.0.1:5000/;
+    proxy_set_header   Host $host;
+    proxy_set_header   X-Real-IP $remote_addr;
+    proxy_buffering    off;   # required for the live log SSE stream
+    proxy_cache        off;
+    proxy_read_timeout 3600;
+}
+```
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+---
+
 ## Disclaimer
 
 This tool is intended **only for testing your own websites**.  
