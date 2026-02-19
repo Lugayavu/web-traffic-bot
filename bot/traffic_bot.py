@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from bot.logger import setup_logger
 from bot.proxy_manager import ProxyManager
-from bot.selenium_driver import SeleniumDriver
+from bot.selenium_driver import SeleniumDriver, resolve_driver_once
 from bot.session_simulator import SessionSimulator
 
 logger = setup_logger(__name__)
@@ -64,6 +64,13 @@ class TrafficBot:
         logger.info(f"Headless            : {self.config.headless}")
         logger.info("=" * 60)
 
+        # Pre-resolve chromedriver ONCE before the thread pool starts.
+        # This prevents race conditions when many concurrent sessions all try
+        # to download/access the driver cache simultaneously.
+        pre_driver_path = resolve_driver_once(self.config.chromium_path)
+        if pre_driver_path:
+            logger.info(f"ChromeDriver pre-resolved: {pre_driver_path}")
+
         start_time = time.time()
 
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
@@ -87,7 +94,7 @@ class TrafficBot:
                        and session_num < self.config.sessions_count
                        and not _STOP_REQUESTED):
                     session_num += 1
-                    future = pool.submit(self._run_session, session_num)
+                    future = pool.submit(self._run_session, session_num, pre_driver_path)
                     futures[future] = session_num
                     logger.info(f"[Session {session_num}/{self.config.sessions_count}] started "
                                 f"(active: {len(futures)})")
@@ -136,7 +143,7 @@ class TrafficBot:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _run_session(self, session_num: int):
+    def _run_session(self, session_num: int, pre_driver_path=None):
         """Run a single browser session. Called from a thread pool worker."""
         driver = None
         try:
@@ -148,6 +155,7 @@ class TrafficBot:
                 headless=self.config.headless,
                 proxy=proxy,
                 chromium_path=self.config.chromium_path,
+                driver_path=pre_driver_path,
             )
             driver.get(self.config.target_url)
 

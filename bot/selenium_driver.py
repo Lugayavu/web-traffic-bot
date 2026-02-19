@@ -4,6 +4,7 @@ import random
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -80,6 +81,10 @@ _FALLBACK_TIMEZONES = [
 
 # Cache: proxy_host → timezone string (avoids repeated GeoIP calls)
 _proxy_tz_cache: dict = {}
+
+# Pre-resolved driver path cache (populated by resolve_driver_once())
+_driver_path_cache: Optional[str] = None
+_driver_path_lock = threading.Lock()
 
 
 def _get_proxy_timezone(proxy_url: Optional[str]) -> Optional[str]:
@@ -353,6 +358,80 @@ def _resolve_browser_and_driver(
     return browser, driver
 
 
+def _get_wdm_service(chromium_path: Optional[str] = None) -> Service:
+    """
+    Download the correct chromedriver via webdriver-manager and return a Service.
+
+    Uses ChromeType.CHROMIUM when the browser binary path contains 'chromium'.
+    Module-level so it can be called before SeleniumDriver is instantiated.
+    """
+    try:
+        from webdriver_manager.chrome import ChromeDriverManager
+    except ImportError:
+        raise RuntimeError(
+            "webdriver-manager is not installed. "
+            "Run: pip install webdriver-manager"
+        )
+
+    browser_bin = chromium_path or _find_on_path(_BROWSER_CANDIDATES)
+    is_chromium = bool(browser_bin and "chromium" in browser_bin.lower())
+
+    if is_chromium:
+        try:
+            from webdriver_manager.core.os_manager import ChromeType
+            logger.info("Downloading chromedriver for Chromium via webdriver-manager...")
+            return Service(
+                ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+            )
+        except Exception as e:
+            logger.warning(f"ChromeType.CHROMIUM download failed ({e}), trying generic...")
+
+    logger.info("Downloading chromedriver via webdriver-manager...")
+    return Service(ChromeDriverManager().install())
+
+
+def resolve_driver_once(chromium_path: Optional[str] = None) -> Optional[str]:
+    """
+    Resolve and cache the chromedriver path exactly **once** (thread-safe).
+
+    Call this BEFORE starting the concurrent session thread pool so that all
+    sessions reuse the same pre-downloaded driver path instead of racing to
+    download it simultaneously (which causes zip corruption and tuple errors).
+
+    Returns the absolute path to chromedriver, or None on failure.
+    """
+    global _driver_path_cache
+
+    with _driver_path_lock:
+        if _driver_path_cache is not None:
+            return _driver_path_cache
+
+        # Try system driver first (no download needed)
+        try:
+            browser_bin, driver_bin = _resolve_browser_and_driver(chromium_path)
+            if driver_bin:
+                logger.info(f"Pre-resolved system chromedriver: {driver_bin}")
+                _driver_path_cache = driver_bin
+                return driver_bin
+        except RuntimeError:
+            raise  # snap Chromium error — propagate immediately
+
+        # No system driver — download once
+        logger.info(
+            "Pre-downloading chromedriver via webdriver-manager "
+            "(once for all concurrent sessions)..."
+        )
+        try:
+            svc = _get_wdm_service(chromium_path)
+            path = svc.path
+            _driver_path_cache = path
+            logger.info(f"ChromeDriver cached at: {path}")
+            return path
+        except Exception as e:
+            logger.error(f"Failed to pre-download chromedriver: {e}")
+            return None
+
+
 class SeleniumDriver:
     """Wrapper for Selenium WebDriver with Chromium/Chrome.
 
@@ -362,10 +441,21 @@ class SeleniumDriver:
     """
 
     def __init__(self, headless: bool = True, proxy: Optional[str] = None,
-                 chromium_path: Optional[str] = None):
+                 chromium_path: Optional[str] = None,
+                 driver_path: Optional[str] = None):
+        """
+        Args:
+            headless:     Run Chrome without a visible window.
+            proxy:        Proxy URL (e.g. 'http://user:pass@host:port').
+            chromium_path: Path to the Chrome/Chromium binary (auto-detected if None).
+            driver_path:  Pre-resolved chromedriver path from resolve_driver_once().
+                          Pass this when running many concurrent sessions to avoid
+                          race conditions in webdriver-manager's download cache.
+        """
         self.headless = headless
         self.proxy = proxy
         self.chromium_path = chromium_path
+        self._driver_path = driver_path  # pre-resolved, skips resolution per session
         self.driver = None
         self._tmp_dir: Optional[str] = None
         self._setup_driver()
@@ -450,6 +540,21 @@ class SeleniumDriver:
 
     def _setup_driver(self):
         options = self._build_options()
+
+        # If a pre-resolved driver path was supplied (from resolve_driver_once()),
+        # use it directly — skip the per-session resolution to avoid race conditions.
+        if self._driver_path:
+            browser_bin, _ = _resolve_browser_and_driver(self.chromium_path)
+            if browser_bin:
+                options.binary_location = browser_bin
+            try:
+                service = Service(self._driver_path)
+                self.driver = webdriver.Chrome(service=service, options=options)
+                logger.info("Selenium WebDriver initialised successfully (pre-resolved driver)")
+                return
+            except Exception:
+                pass  # fall through to normal resolution
+
         browser_bin, driver_bin = _resolve_browser_and_driver(self.chromium_path)
 
         # Tell Selenium which browser binary to use
@@ -466,7 +571,7 @@ class SeleniumDriver:
                     "No matching system chromedriver found — using webdriver-manager "
                     "to download the correct version. This requires internet access."
                 )
-                service = self._get_webdriver_manager_service(browser_bin)
+                service = self._get_webdriver_manager_service()
 
             self.driver = webdriver.Chrome(service=service, options=options)
             logger.info("Selenium WebDriver initialised successfully")
@@ -487,33 +592,9 @@ class SeleniumDriver:
             )
             raise
 
-    @staticmethod
-    def _get_webdriver_manager_service(browser_bin: Optional[str]) -> Service:
+    def _get_webdriver_manager_service(self) -> Service:
         """Download and return a Service using webdriver-manager."""
-        try:
-            from webdriver_manager.chrome import ChromeDriverManager
-        except ImportError:
-            raise RuntimeError(
-                "webdriver-manager is not installed. "
-                "Run: pip install webdriver-manager"
-            )
-
-        # Use ChromeType.CHROMIUM when the browser is Chromium (not Google Chrome)
-        is_chromium = browser_bin and (
-            "chromium" in browser_bin.lower()
-        )
-        if is_chromium:
-            try:
-                from webdriver_manager.core.os_manager import ChromeType
-                logger.info("Downloading chromedriver for Chromium via webdriver-manager...")
-                return Service(
-                    ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
-                )
-            except Exception as e:
-                logger.warning(f"ChromeType.CHROMIUM download failed ({e}), trying generic...")
-
-        logger.info("Downloading chromedriver via webdriver-manager...")
-        return Service(ChromeDriverManager().install())
+        return _get_wdm_service(self.chromium_path)
 
     # ------------------------------------------------------------------
     # Navigation
