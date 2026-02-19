@@ -360,21 +360,24 @@ def _resolve_browser_and_driver(
 
 def _get_wdm_service(chromium_path: Optional[str] = None) -> Service:
     """
-    Download the correct chromedriver via webdriver-manager and return a Service.
+    Download the correct chromedriver and return a Service.
 
-    Uses ChromeType.CHROMIUM when the browser binary path contains 'chromium'.
-    Module-level so it can be called before SeleniumDriver is instantiated.
+    Strategy (in order):
+    1. webdriver-manager with ChromeType.CHROMIUM (for Chromium browsers)
+    2. webdriver-manager generic (for Google Chrome)
+    3. Selenium Manager fallback — pass Service() with no path and let
+       Selenium 4.6+ auto-resolve the driver (handles Chrome 115+)
     """
+    browser_bin = chromium_path or _find_on_path(_BROWSER_CANDIDATES)
+    is_chromium = bool(browser_bin and "chromium" in browser_bin.lower())
+
     try:
         from webdriver_manager.chrome import ChromeDriverManager
     except ImportError:
-        raise RuntimeError(
-            "webdriver-manager is not installed. "
-            "Run: pip install webdriver-manager"
-        )
-
-    browser_bin = chromium_path or _find_on_path(_BROWSER_CANDIDATES)
-    is_chromium = bool(browser_bin and "chromium" in browser_bin.lower())
+        # webdriver-manager not installed — fall through to Selenium Manager
+        logger.warning("webdriver-manager not installed; using Selenium Manager")
+        logger.info("Selenium Manager will auto-download the correct chromedriver...")
+        return Service()  # Selenium 4.6+ Selenium Manager handles this
 
     if is_chromium:
         try:
@@ -386,8 +389,17 @@ def _get_wdm_service(chromium_path: Optional[str] = None) -> Service:
         except Exception as e:
             logger.warning(f"ChromeType.CHROMIUM download failed ({e}), trying generic...")
 
-    logger.info("Downloading chromedriver via webdriver-manager...")
-    return Service(ChromeDriverManager().install())
+    try:
+        logger.info("Downloading chromedriver via webdriver-manager...")
+        return Service(ChromeDriverManager().install())
+    except Exception as e:
+        # webdriver-manager failed (e.g. Chrome 145 not in its database yet)
+        # Fall back to Selenium Manager which handles any Chrome version
+        logger.warning(
+            f"webdriver-manager failed ({e}). "
+            "Falling back to Selenium Manager (auto-downloads correct driver)..."
+        )
+        return Service()  # Selenium 4.6+ will invoke Selenium Manager automatically
 
 
 def resolve_driver_once(chromium_path: Optional[str] = None) -> Optional[str]:
@@ -416,17 +428,27 @@ def resolve_driver_once(chromium_path: Optional[str] = None) -> Optional[str]:
         except RuntimeError:
             raise  # snap Chromium error — propagate immediately
 
-        # No system driver — download once
+        # No system driver — download once via webdriver-manager or Selenium Manager
         logger.info(
-            "Pre-downloading chromedriver via webdriver-manager "
+            "Pre-downloading chromedriver "
             "(once for all concurrent sessions)..."
         )
         try:
             svc = _get_wdm_service(chromium_path)
-            path = svc.path
-            _driver_path_cache = path
-            logger.info(f"ChromeDriver cached at: {path}")
-            return path
+            path = svc.path if svc.path else None
+            if path:
+                _driver_path_cache = path
+                logger.info(f"ChromeDriver cached at: {path}")
+                return path
+            else:
+                # Selenium Manager fallback — driver will be resolved per-session
+                # (Service() with no path triggers Selenium Manager automatically)
+                logger.info(
+                    "Selenium Manager will resolve chromedriver per-session "
+                    "(Chrome 145+ support)"
+                )
+                _driver_path_cache = ""  # sentinel: "use Service() with no path"
+                return None
         except Exception as e:
             logger.error(f"Failed to pre-download chromedriver: {e}")
             return None
