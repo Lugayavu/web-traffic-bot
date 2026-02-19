@@ -3,9 +3,19 @@ Flask web dashboard for Web Traffic Bot.
 
 Provides a browser UI to configure and run the bot without touching the CLI.
 Logs are streamed live to the browser via Server-Sent Events (SSE).
+
+Key design decisions:
+- Config is persisted to disk (config_state.json) so it survives page refreshes
+  and server restarts.
+- Each SSE client gets its own queue (broadcast pattern) so multiple browser
+  tabs / devices can all watch the live log simultaneously without stealing
+  messages from each other.
+- Flask runs with threaded=True so the SSE stream never blocks other requests.
 """
 
+import json
 import logging
+import os
 import queue
 import threading
 from typing import Optional
@@ -22,16 +32,12 @@ from bot.traffic_bot import TrafficBot
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # ---------------------------------------------------------------------------
-# Global bot state
+# Config persistence
 # ---------------------------------------------------------------------------
 
-_bot_thread: Optional[threading.Thread] = None
-_bot_instance = None   # live TrafficBot reference for real-time stats
-_bot_lock = threading.Lock()
-_log_queue: queue.Queue = queue.Queue(maxsize=500)
+_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config_state.json")
 
-# Current config (persisted in memory between page loads)
-_current_config: dict = {
+_DEFAULT_CONFIG: dict = {
     "target_url": "",
     "sessions_count": 10,
     "concurrent_sessions": 1,
@@ -43,41 +49,98 @@ _current_config: dict = {
 }
 
 
+def _load_persisted_config() -> dict:
+    """Load config from disk, falling back to defaults."""
+    cfg = dict(_DEFAULT_CONFIG)
+    try:
+        if os.path.exists(_CONFIG_FILE):
+            with open(_CONFIG_FILE, "r") as fh:
+                saved = json.load(fh)
+            cfg.update(saved)
+    except Exception:
+        pass
+    return cfg
+
+
+def _save_persisted_config(cfg: dict) -> None:
+    """Write config to disk so it survives page refreshes and restarts."""
+    try:
+        with open(_CONFIG_FILE, "w") as fh:
+            json.dump(cfg, fh, indent=2)
+    except Exception:
+        pass
+
+
+# Current config — loaded from disk at startup
+_current_config: dict = _load_persisted_config()
+
 # ---------------------------------------------------------------------------
-# Log handler that feeds the SSE queue
+# Global bot state
 # ---------------------------------------------------------------------------
 
-class _QueueHandler(logging.Handler):
-    """Push log records into the SSE queue."""
+_bot_thread: Optional[threading.Thread] = None
+_bot_instance = None   # live TrafficBot reference for real-time stats
+_bot_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Broadcast log system
+#
+# Instead of a single shared queue (which splits messages between clients),
+# we keep a list of per-client queues. Every log line is pushed to ALL of
+# them so every connected browser tab sees the full log.
+# ---------------------------------------------------------------------------
+
+_sse_clients: list = []          # list of queue.Queue, one per connected client
+_sse_clients_lock = threading.Lock()
+_log_history: list = []          # last N lines so new clients see recent history
+_LOG_HISTORY_MAX = 200
+
+
+def _broadcast_log(line: str) -> None:
+    """Push a log line to every connected SSE client."""
+    with _sse_clients_lock:
+        _log_history.append(line)
+        if len(_log_history) > _LOG_HISTORY_MAX:
+            _log_history.pop(0)
+        dead = []
+        for q in _sse_clients:
+            try:
+                q.put_nowait(line)
+            except queue.Full:
+                dead.append(q)
+        for q in dead:
+            _sse_clients.remove(q)
+
+
+class _BroadcastHandler(logging.Handler):
+    """Push log records to all connected SSE clients."""
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            _log_queue.put_nowait(self.format(record))
-        except queue.Full:
+            _broadcast_log(self.format(record))
+        except Exception:
             pass
 
 
-def _attach_queue_handler() -> None:
-    """Attach the queue handler to the root logger (once)."""
+def _attach_broadcast_handler() -> None:
+    """Attach the broadcast handler to the root logger (once)."""
     root = logging.getLogger()
     for h in root.handlers:
-        if isinstance(h, _QueueHandler):
-            return  # already attached
-    handler = _QueueHandler()
+        if isinstance(h, _BroadcastHandler):
+            return
+    handler = _BroadcastHandler()
     handler.setFormatter(
         logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             datefmt="%H:%M:%S",
         )
     )
-    # Set level so DEBUG messages from bot modules reach the dashboard
     handler.setLevel(logging.DEBUG)
     root.setLevel(logging.DEBUG)
     root.addHandler(handler)
 
 
-_attach_queue_handler()
-
+_attach_broadcast_handler()
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -85,7 +148,6 @@ _attach_queue_handler()
 
 @app.route("/")
 def index():
-    # Pre-join proxies into a newline-separated string for the textarea
     proxies_str = "\n".join(_current_config.get("proxies") or [])
     return render_template("index.html", config=_current_config, proxies_str=proxies_str)
 
@@ -99,7 +161,6 @@ def get_config():
 def save_config():
     data = request.get_json(force=True)
 
-    # Sanitise / coerce types
     _current_config["target_url"] = str(data.get("target_url", "")).strip()
     _current_config["sessions_count"] = int(data.get("sessions_count", 10))
     _current_config["concurrent_sessions"] = max(1, int(data.get("concurrent_sessions", 1)))
@@ -110,9 +171,11 @@ def save_config():
 
     raw_proxies = data.get("proxies", [])
     if isinstance(raw_proxies, str):
-        # Accept newline- or comma-separated string from the textarea
         raw_proxies = [p.strip() for p in raw_proxies.replace(",", "\n").splitlines()]
     _current_config["proxies"] = [p for p in raw_proxies if p]
+
+    # Persist to disk so config survives page refreshes and server restarts
+    _save_persisted_config(_current_config)
 
     return jsonify({"status": "ok", "config": _current_config})
 
@@ -146,13 +209,6 @@ def start_bot():
         if not _current_config.get("target_url"):
             return jsonify({"status": "error", "message": "target_url is required"}), 400
 
-        # Drain old log messages (thread-safe: keep trying until empty)
-        while True:
-            try:
-                _log_queue.get_nowait()
-            except queue.Empty:
-                break
-
         config = ConfigHandler()
         config.config.update(_current_config)
 
@@ -175,10 +231,6 @@ def start_bot():
 
 @app.route("/api/stop", methods=["POST"])
 def stop_bot():
-    """
-    Request a graceful stop.  TrafficBot checks the flag between sessions.
-    A hard stop requires restarting the server process.
-    """
     running = _bot_thread is not None and _bot_thread.is_alive()
     if not running:
         return jsonify({"status": "ok", "message": "Bot is not running"})
@@ -193,19 +245,40 @@ def stop_bot():
 
 @app.route("/api/logs")
 def stream_logs():
-    """Server-Sent Events endpoint — streams log lines to the browser."""
+    """
+    Server-Sent Events endpoint.
+
+    Each client gets its own queue pre-filled with recent log history,
+    then receives new lines as they arrive. Multiple browser tabs / devices
+    can all connect simultaneously without stealing each other's messages.
+    """
+    # Create a per-client queue and pre-fill with recent history
+    client_q: queue.Queue = queue.Queue(maxsize=1000)
+    with _sse_clients_lock:
+        for line in _log_history:
+            try:
+                client_q.put_nowait(line)
+            except queue.Full:
+                break
+        _sse_clients.append(client_q)
 
     def _generate():
-        yield "data: --- Log stream started ---\n\n"
-        while True:
-            try:
-                line = _log_queue.get(timeout=20)
-                # Escape newlines inside the log line so SSE stays valid
-                safe = line.replace("\n", " ").replace("\r", "")
-                yield f"data: {safe}\n\n"
-            except queue.Empty:
-                # Keep-alive ping so the browser doesn't close the connection
-                yield ": ping\n\n"
+        try:
+            yield "data: --- Log stream connected ---\n\n"
+            while True:
+                try:
+                    line = client_q.get(timeout=20)
+                    safe = line.replace("\n", " ").replace("\r", "")
+                    yield f"data: {safe}\n\n"
+                except queue.Empty:
+                    yield ": ping\n\n"
+        finally:
+            # Remove this client's queue when the connection closes
+            with _sse_clients_lock:
+                try:
+                    _sse_clients.remove(client_q)
+                except ValueError:
+                    pass
 
     return Response(
         _generate(),
