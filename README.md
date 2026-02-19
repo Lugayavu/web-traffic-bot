@@ -361,6 +361,28 @@ Set the **Chromium Path** field in the dashboard (or `chromium_path` in the conf
 
 ---
 
+### webdriver-manager can't find chromedriver for Chrome 145+
+
+**Symptom:** `webdriver-manager is having trouble finding chromedriver for Chrome 145`
+
+**Cause:** `webdriver-manager` doesn't have very new Chrome versions in its database yet.
+
+**Fix (automatic):** The bot now falls back to **Selenium Manager** (built into Selenium 4.6+) which handles any Chrome version. Pull the latest code and it works automatically:
+
+```bash
+git pull origin session/agent_a97e6794-982e-42a7-b155-ab0f7c5d894c
+```
+
+**Best fix (no download needed):** Install the apt version of Chromium which ships with its own matching chromedriver:
+
+```bash
+sudo snap remove chromium
+sudo apt install -y chromium chromium-driver
+chromium --version && chromedriver --version  # should match
+```
+
+---
+
 ### Dashboard freezes or config disappears on refresh
 
 **Config disappears:** Click **💾 Save** before starting the bot. The config is saved to `bot/dashboard/config_state.json` and reloaded automatically on every page load.
