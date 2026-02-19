@@ -127,9 +127,11 @@ class SessionSimulator:
             current_url = self.driver.current_url
             current_domain = urlparse(current_url).netloc
 
-            # Find all <a> tags with href pointing to the same domain
+            # Find all <a> tags with href pointing to the same domain.
+            # Store (href, element) pairs at collection time to avoid
+            # StaleElementReferenceException when we use them later.
             links = self.driver.find_elements(By.TAG_NAME, "a")
-            internal_links = []
+            internal_links = []  # list of (href_str, element)
             for link in links:
                 try:
                     href = link.get_attribute("href")
@@ -141,7 +143,7 @@ class SessionSimulator:
                             and parsed.scheme in ("http", "https")
                             and not href.startswith("javascript:")
                             and parsed.path != urlparse(current_url).path):
-                        internal_links.append(link)
+                        internal_links.append((href, link))
                 except WebDriverException:
                     continue
 
@@ -149,18 +151,20 @@ class SessionSimulator:
                 logger.debug("No internal links found — staying on current page")
                 return
 
-            # Pick a random internal link and click it
-            link = random.choice(internal_links[:20])  # limit to first 20 candidates
-            href = link.get_attribute("href")
+            # Pick a random internal link — use the pre-stored href string
+            href, link_elem = random.choice(internal_links[:20])
             logger.info(f"Navigating to internal page: {href}")
 
-            # Scroll to the link first (more natural)
+            # Scroll to the link first (more natural) — element may be stale, that's OK
             try:
-                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", link)
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", link_elem
+                )
                 self._sleep_within_budget(session_start, random.uniform(0.5, 1.5))
             except WebDriverException:
                 pass
 
+            # Navigate using the URL string (not the element) — immune to stale refs
             self.driver.get(href)
             self._sleep_within_budget(session_start, random.uniform(2, 4))
 
