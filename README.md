@@ -8,9 +8,11 @@ It opens real browser sessions, scrolls through pages, and simulates user engage
 ## Features
 
 - **Web dashboard** — configure and control everything from your browser at `http://localhost:5000`
-- **Concurrent sessions** — run multiple browser windows simultaneously (set any number)
+- **Concurrent sessions** — run multiple browser windows simultaneously (any number, thread-safe)
 - **Device fingerprint randomisation** — each session gets a unique user-agent, screen resolution, language, and timezone
-- **Proxy-aware timezone** — automatically detects the proxy's exit IP timezone via GeoIP lookup
+- **Proxy-aware timezone** — detects the proxy's exit IP timezone via GeoIP lookup (through the proxy)
+- **Multi-page navigation** — 60% of sessions click an internal link for 2+ page views in GA4
+- **GA4 engaged sessions** — sessions stay 45 s by default, triggering the `user_engagement` event
 - Headless Chrome/Chromium sessions via Selenium
 - Configurable total sessions, concurrent sessions, session duration, and total run time
 - Optional proxy rotation (round-robin)
