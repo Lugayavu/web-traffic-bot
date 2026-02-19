@@ -78,8 +78,16 @@ Then open your browser at **http://localhost:5000**
 | **Chromium Path** | Custom browser binary path (leave blank to auto-detect) |
 | **Headless toggle** | Run silently or with a visible browser window |
 | **Start / Stop** | Launch or gracefully stop the bot |
-| **Live Log** | Real-time log stream directly in the browser |
+| **Live Log** | Real-time log stream — works from multiple devices simultaneously |
 | **Stats cards** | Live counters: ✅ Completed, ❌ Failed, Progress, ⏱ Elapsed |
+
+### Config persistence
+
+Your configuration (URL, sessions, proxies, etc.) is automatically saved to disk when you click **💾 Save**. It survives page refreshes and server restarts — you never have to re-enter your settings.
+
+### Multi-device access
+
+You can open the dashboard from multiple browser tabs or devices at the same time. Each connection gets its own live log stream — no messages are lost or split between clients.
 
 ### Custom host / port
 
@@ -350,6 +358,18 @@ The bot will fall back to `webdriver-manager` automatically if no system `chrome
 #### Case 4 — Non-standard install path
 
 Set the **Chromium Path** field in the dashboard (or `chromium_path` in the config file) to the full path of the browser binary, e.g. `/usr/bin/chromium`.
+
+---
+
+### Dashboard freezes or config disappears on refresh
+
+**Config disappears:** Click **💾 Save** before starting the bot. The config is saved to `bot/dashboard/config_state.json` and reloaded automatically on every page load.
+
+**Dashboard freezes while bot is running:** This was a bug in older versions (single shared log queue). Pull the latest code — the dashboard now uses a per-client broadcast queue and never freezes.
+
+**Live log stops after refreshing:** The SSE stream reconnects automatically on page load. You will see `--- Log stream connected ---` in the log box and then the last 200 lines of history.
+
+**Accessing from another device:** Open `http://<server-ip>:5000` from any browser. Multiple devices can connect simultaneously — each gets its own full log stream.
 
 ---
 
