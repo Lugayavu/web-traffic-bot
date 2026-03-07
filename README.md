@@ -9,7 +9,7 @@ It opens real browser sessions, scrolls through pages, and simulates user engage
 
 - **Web dashboard** — configure and control everything from your browser at `http://localhost:5000`
 - **Concurrent sessions** — run multiple browser windows simultaneously (any number, thread-safe)
-- **40 device fingerprints** — each session randomly picks from Windows/macOS/Linux desktops, Android phones, iPhones, iPads, and Android tablets with matching screen resolutions
+- **73 device fingerprints** — each session randomly picks from Windows/macOS/Linux desktops, Android phones (Pixel, Samsung, Xiaomi, OnePlus, Huawei), iPhones, iPads, and Android tablets with matching screen resolutions
 - **Proxy-aware timezone** — detects the proxy's exit IP timezone via GeoIP lookup (through the proxy)
 - **100% multi-page navigation** — every session clicks an internal link for 2+ page views in GA4
 - **GA4 engaged sessions guaranteed** — 60 s default session duration + 2 page views = always engaged
