@@ -50,13 +50,22 @@ _DEFAULT_CONFIG: dict = {
 
 
 def _load_persisted_config() -> dict:
-    """Load config from disk, falling back to defaults."""
+    """Load config from disk, falling back to defaults.
+
+    Also migrates old single-URL configs (target_url key) to the new
+    target_urls list format so existing saved configs keep working.
+    """
     cfg = dict(_DEFAULT_CONFIG)
     try:
         if os.path.exists(_CONFIG_FILE):
             with open(_CONFIG_FILE, "r") as fh:
                 saved = json.load(fh)
             cfg.update(saved)
+            # Migrate old target_url → target_urls
+            old_url = cfg.get("target_url", "").strip()
+            if old_url and old_url not in cfg.get("target_urls", []):
+                cfg.setdefault("target_urls", [])
+                cfg["target_urls"] = [old_url] + [u for u in cfg["target_urls"] if u != old_url]
     except Exception:
         pass
     return cfg
@@ -214,7 +223,9 @@ def start_bot():
         if _bot_thread is not None and _bot_thread.is_alive():
             return jsonify({"status": "error", "message": "Bot is already running"}), 409
 
-        if not _current_config.get("target_urls"):
+        # Accept either target_urls (new) or target_url (old single-URL format)
+        has_urls = bool(_current_config.get("target_urls")) or bool(_current_config.get("target_url", "").strip())
+        if not has_urls:
             return jsonify({"status": "error", "message": "At least one target URL is required"}), 400
 
         config = ConfigHandler()
