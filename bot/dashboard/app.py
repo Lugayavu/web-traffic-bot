@@ -38,7 +38,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 _CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config_state.json")
 
 _DEFAULT_CONFIG: dict = {
-    "target_url": "",
+    "target_urls": [],        # list of URLs (one per line in the dashboard)
     "sessions_count": 10,
     "concurrent_sessions": 1,
     "session_duration": 60,   # 60 s → GA4 always counts as engaged session
@@ -149,7 +149,9 @@ _attach_broadcast_handler()
 @app.route("/")
 def index():
     proxies_str = "\n".join(_current_config.get("proxies") or [])
-    return render_template("index.html", config=_current_config, proxies_str=proxies_str)
+    urls_str = "\n".join(_current_config.get("target_urls") or [])
+    return render_template("index.html", config=_current_config,
+                           proxies_str=proxies_str, urls_str=urls_str)
 
 
 @app.route("/api/config", methods=["GET"])
@@ -161,10 +163,15 @@ def get_config():
 def save_config():
     data = request.get_json(force=True)
 
-    _current_config["target_url"] = str(data.get("target_url", "")).strip()
+    # Parse target_urls (newline- or comma-separated textarea)
+    raw_urls = data.get("target_urls", [])
+    if isinstance(raw_urls, str):
+        raw_urls = [u.strip() for u in raw_urls.replace(",", "\n").splitlines()]
+    _current_config["target_urls"] = [u for u in raw_urls if u]
+
     _current_config["sessions_count"] = int(data.get("sessions_count", 10))
     _current_config["concurrent_sessions"] = max(1, int(data.get("concurrent_sessions", 1)))
-    _current_config["session_duration"] = int(data.get("session_duration", 45))
+    _current_config["session_duration"] = int(data.get("session_duration", 60))
     _current_config["duration_seconds"] = int(data.get("duration_seconds", 600))
     _current_config["headless"] = bool(data.get("headless", True))
     _current_config["chromium_path"] = str(data.get("chromium_path", "")).strip()
@@ -188,14 +195,15 @@ def bot_status():
 
 @app.route("/api/stats", methods=["GET"])
 def bot_stats():
-    """Return live session counters from the running bot."""
+    """Return live session counters (global + per-URL) from the running bot."""
     if _bot_instance is not None:
         return jsonify({
             "completed": _bot_instance.sessions_completed,
             "failed":    _bot_instance.sessions_failed,
             "total":     _bot_instance.config.sessions_count,
+            "url_stats": _bot_instance.url_stats,
         })
-    return jsonify({"completed": 0, "failed": 0, "total": 0})
+    return jsonify({"completed": 0, "failed": 0, "total": 0, "url_stats": {}})
 
 
 @app.route("/api/start", methods=["POST"])
@@ -206,8 +214,8 @@ def start_bot():
         if _bot_thread is not None and _bot_thread.is_alive():
             return jsonify({"status": "error", "message": "Bot is already running"}), 409
 
-        if not _current_config.get("target_url"):
-            return jsonify({"status": "error", "message": "target_url is required"}), 400
+        if not _current_config.get("target_urls"):
+            return jsonify({"status": "error", "message": "At least one target URL is required"}), 400
 
         config = ConfigHandler()
         config.config.update(_current_config)

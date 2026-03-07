@@ -4,6 +4,7 @@ import os
 import yaml
 
 DEFAULTS = {
+    'target_urls': [],        # list of URLs to test (replaces single target_url)
     'sessions_count': 10,
     'concurrent_sessions': 1,
     'session_duration': 60,   # 60 s ensures GA4 always counts as engaged session
@@ -36,9 +37,10 @@ class ConfigHandler:
 
     def validate(self):
         """Raise ValueError if the config is not usable."""
-        if not self.config.get('target_url'):
+        if not self.target_urls:
             raise ValueError(
-                "target_url is required. Pass --url on the command line or set it in the config file."
+                "At least one target URL is required. "
+                "Set target_urls in the config file or use --url on the command line."
             )
 
     # ------------------------------------------------------------------
@@ -46,12 +48,34 @@ class ConfigHandler:
     # ------------------------------------------------------------------
 
     @property
-    def target_url(self):
-        return self.config.get('target_url')
+    def target_urls(self) -> list:
+        """List of target URLs. Always returns a list (never None)."""
+        urls = self.config.get('target_urls') or []
+        # Backwards compat: if old single target_url is set, include it
+        single = self.config.get('target_url')
+        if single and single not in urls:
+            urls = [single] + urls
+        return [u for u in urls if u]
+
+    @target_urls.setter
+    def target_urls(self, value: list):
+        self.config['target_urls'] = [u for u in (value or []) if u]
+
+    @property
+    def target_url(self) -> str:
+        """First URL in the list (backwards compatibility)."""
+        urls = self.target_urls
+        return urls[0] if urls else ""
 
     @target_url.setter
-    def target_url(self, value):
+    def target_url(self, value: str):
+        """Set a single URL — replaces the list with just this URL."""
         self.config['target_url'] = value
+        # Also update target_urls so both are in sync
+        if value:
+            existing = self.config.get('target_urls') or []
+            if value not in existing:
+                self.config['target_urls'] = [value] + [u for u in existing if u != value]
 
     @property
     def sessions_count(self):

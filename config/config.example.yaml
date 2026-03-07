@@ -1,9 +1,14 @@
 # Example configuration for Web Traffic Bot
 # Copy to config.yaml and edit as needed for your target site
 
-target_url: "https://example.com"
+# One or more URLs to test — sessions are distributed round-robin across all URLs.
+# You can monitor per-URL performance in the dashboard.
+target_urls:
+  - "https://example.com"
+  - "https://example.com/blog"
+  - "https://example.com/about"
 
-# Total number of browser sessions to run
+# Total number of browser sessions to run (distributed across all URLs)
 sessions_count: 10
 
 # How many browser windows to run at the same time.

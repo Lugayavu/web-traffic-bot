@@ -306,9 +306,8 @@
       <h2><span class="icon">⚙️</span> Configuration</h2>
 
       <div class="form-group">
-        <label>Target URL</label>
-        <input type="url" id="target_url" placeholder="https://yoursite.com"
-               value="{{ config.target_url }}" />
+        <label>Target URLs <span style="color:var(--muted);font-size:.75rem;">(one per line — sessions distributed round-robin)</span></label>
+        <textarea id="target_urls" placeholder="https://yoursite.com&#10;https://yoursite.com/blog&#10;https://yoursite.com/about" style="min-height:80px;">{{ urls_str }}</textarea>
       </div>
 
       <div class="row-2">
@@ -396,6 +395,22 @@
       </div>
       <div id="log-box"></div>
     </div>
+
+    <!-- Per-URL performance table -->
+    <div class="card" id="url-stats-card" style="display:none; margin-top:1rem;">
+      <h2><span class="icon">🔗</span> Per-URL Performance</h2>
+      <table id="url-stats-table" style="width:100%;border-collapse:collapse;font-size:.82rem;">
+        <thead>
+          <tr style="color:var(--muted);text-align:left;border-bottom:1px solid var(--border);">
+            <th style="padding:.4rem .6rem;">URL</th>
+            <th style="padding:.4rem .6rem;text-align:center;">✅ Done</th>
+            <th style="padding:.4rem .6rem;text-align:center;">❌ Failed</th>
+            <th style="padding:.4rem .6rem;text-align:center;">Rate</th>
+          </tr>
+        </thead>
+        <tbody id="url-stats-body"></tbody>
+      </table>
+    </div>
   </section>
 </main>
 
@@ -438,10 +453,10 @@ function appendLog(line) {
 /* ------------------------------------------------------------------ */
 function getFormConfig() {
   return {
-    target_url:          $('target_url').value.trim(),
+    target_urls:         $('target_urls').value.trim(),
     sessions_count:      parseInt($('sessions_count').value) || 10,
     concurrent_sessions: parseInt($('concurrent_sessions').value) || 1,
-    session_duration:    parseInt($('session_duration').value) || 45,
+    session_duration:    parseInt($('session_duration').value) || 60,
     duration_seconds:    parseInt($('duration_seconds').value) || 600,
     proxies:             $('proxies').value.trim(),
     headless:            $('headless').checked,
@@ -544,6 +559,28 @@ async function pollStats() {
     if (data.total !== undefined && data.total > 0) {
       const done = data.completed + data.failed;
       $('stat-progress').textContent = `${done} / ${data.total}`;
+    }
+    // Update per-URL stats table
+    const urlStats = data.url_stats || {};
+    const urls = Object.keys(urlStats);
+    if (urls.length > 0) {
+      $('url-stats-card').style.display = '';
+      const tbody = $('url-stats-body');
+      tbody.innerHTML = '';
+      for (const url of urls) {
+        const s = urlStats[url];
+        const total = s.completed + s.failed;
+        const rate = total > 0 ? Math.round(s.completed / total * 100) + '%' : '—';
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border)';
+        tr.innerHTML = `
+          <td style="padding:.4rem .6rem;word-break:break-all;color:var(--accent)">${url}</td>
+          <td style="padding:.4rem .6rem;text-align:center;color:var(--green)">${s.completed}</td>
+          <td style="padding:.4rem .6rem;text-align:center;color:var(--red)">${s.failed}</td>
+          <td style="padding:.4rem .6rem;text-align:center">${rate}</td>
+        `;
+        tbody.appendChild(tr);
+      }
     }
   } catch (_) {}
 }
