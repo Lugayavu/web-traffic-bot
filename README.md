@@ -9,10 +9,10 @@ It opens real browser sessions, scrolls through pages, and simulates user engage
 
 - **Web dashboard** — configure and control everything from your browser at `http://localhost:5000`
 - **Concurrent sessions** — run multiple browser windows simultaneously (any number, thread-safe)
-- **Device fingerprint randomisation** — each session gets a unique user-agent, screen resolution, language, and timezone
+- **40 device fingerprints** — each session randomly picks from Windows/macOS/Linux desktops, Android phones, iPhones, iPads, and Android tablets with matching screen resolutions
 - **Proxy-aware timezone** — detects the proxy's exit IP timezone via GeoIP lookup (through the proxy)
-- **Multi-page navigation** — 60% of sessions click an internal link for 2+ page views in GA4
-- **GA4 engaged sessions** — sessions stay 45 s by default, triggering the `user_engagement` event
+- **100% multi-page navigation** — every session clicks an internal link for 2+ page views in GA4
+- **GA4 engaged sessions guaranteed** — 60 s default session duration + 2 page views = always engaged
 - Headless Chrome/Chromium sessions via Selenium
 - Configurable total sessions, concurrent sessions, session duration, and total run time
 - Optional proxy rotation (round-robin)
@@ -156,7 +156,7 @@ Bot (CLI mode):
 target_url: "https://yoursite.com"
 sessions_count: 10          # total number of browser sessions
 concurrent_sessions: 3      # how many browsers run at the same time
-session_duration: 45        # seconds each session stays on the page
+session_duration: 60        # seconds per session (60 s = GA4 engaged session guaranteed)
 duration_seconds: 600       # hard stop after this many seconds total
 proxies:
   - "http://user:password@proxy1.example:8000"
