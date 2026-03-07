@@ -195,6 +195,16 @@ _FALLBACK_TIMEZONES = [
     "Asia/Tokyo", "Asia/Singapore", "Australia/Sydney",
 ]
 
+# Device-type detection keywords (module-level so they are not recreated per session)
+# Tablet identifiers: iPad, Samsung Tab (SM-X/SM-T), Xiaomi Pad (23043rp), Lenovo Tab (TB-X)
+_TABLET_KEYWORDS: tuple = ("ipad", "sm-x", "sm-t", "tb-x", "23043rp")
+# Mobile identifiers: iPhone, known Android phone model strings
+_MOBILE_KEYWORDS: tuple = (
+    "iphone", "pixel", "redmi", "oneplus", "poco",
+    "sm-s", "sm-a", "sm-g", "sm-m", "els-", "vog-", "cph", "rmx",
+    "2312dra", "huawei",
+)
+
 # ---------------------------------------------------------------------------
 # Proxy-aware timezone lookup
 # ---------------------------------------------------------------------------
@@ -661,17 +671,9 @@ class SeleniumDriver:
 
         # Pick a screen size that matches the device type of the user-agent
         ua_lower = ua.lower()
-        # Tablet: iPad, Samsung Tab (SM-X/SM-T), Xiaomi Pad (23043rp), Lenovo Tab (TB-X)
-        _TABLET_KW = ("ipad", "sm-x", "sm-t", "tb-x", "23043rp")
-        # Mobile: any Android with "mobile", iPhone, or known phone model identifiers
-        _MOBILE_KW = (
-            "iphone", "pixel", "redmi", "oneplus", "poco",
-            "sm-s", "sm-a", "sm-g", "sm-m", "els-", "vog-", "cph", "rmx",
-            "2312dra", "huawei",
-        )
-        if any(k in ua_lower for k in _TABLET_KW):
+        if any(k in ua_lower for k in _TABLET_KEYWORDS):
             screen = random.choice(_TABLET_SIZES)
-        elif (any(k in ua_lower for k in _MOBILE_KW)
+        elif (any(k in ua_lower for k in _MOBILE_KEYWORDS)
               or ("android" in ua_lower and "mobile" in ua_lower)):
             screen = random.choice(_MOBILE_SIZES)
         else:
