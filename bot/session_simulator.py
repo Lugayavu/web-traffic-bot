@@ -47,10 +47,10 @@ class SessionSimulator:
             # Move the mouse around to trigger hover events
             self._move_mouse()
 
-            # Occasionally navigate to a second internal page (triggers 2+ page views
-            # in GA4, which also counts as an engaged session and looks more natural)
-            if self._remaining(session_start) > 15:
-                self._maybe_navigate_internal(session_start)
+            # Always navigate to a second internal page (triggers 2+ page views in GA4,
+            # which guarantees an engaged session and looks like a real user browsing).
+            # Falls back gracefully if no internal links are found.
+            self._maybe_navigate_internal(session_start)
 
             # Stay on the page for the remainder of the session duration
             self._idle_loop(session_start)
@@ -112,16 +112,16 @@ class SessionSimulator:
 
     def _maybe_navigate_internal(self, session_start: float):
         """
-        With 60% probability, find an internal link on the page and click it.
+        Find an internal link on the page and click it.
         This creates a 2nd page view in GA4, which:
         - Triggers an 'engaged session' (2+ pages viewed)
         - Looks more natural than a single-page visit
         - Increases pages/session metric
 
         Only follows links that stay on the same domain (internal links).
+        If no internal links are found the session stays on the landing page
+        (still counts as engaged because of the 45 s session duration).
         """
-        if random.random() > 0.6:
-            return  # 40% of sessions stay on one page (also natural)
 
         try:
             current_url = self.driver.current_url

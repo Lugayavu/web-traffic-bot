@@ -41,7 +41,7 @@ _DEFAULT_CONFIG: dict = {
     "target_url": "",
     "sessions_count": 10,
     "concurrent_sessions": 1,
-    "session_duration": 45,
+    "session_duration": 60,   # 60 s → GA4 always counts as engaged session
     "duration_seconds": 600,
     "proxies": [],
     "headless": True,

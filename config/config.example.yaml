@@ -12,8 +12,10 @@ sessions_count: 10
 # Warning: each concurrent session uses ~200-400 MB RAM.
 concurrent_sessions: 1
 
-# How long each session stays on the page (seconds)
-session_duration: 45
+# How long each session stays on the page (seconds).
+# GA4 counts a session as "engaged" after 10 s.
+# 60 s is recommended — gives time for multi-page navigation too.
+session_duration: 60
 
 # Hard stop: bot stops after this many seconds regardless of sessions_count
 duration_seconds: 600
