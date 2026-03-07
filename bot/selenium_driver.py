@@ -77,8 +77,8 @@ USER_AGENTS = [
     "Mozilla/5.0 (Linux; Android 12; SM-T870) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Safari/537.36",
 ]
 
-# Common desktop screen resolutions
-_SCREEN_SIZES = [
+# Screen resolutions by device category
+_DESKTOP_SIZES = [
     "1920,1080",
     "1366,768",
     "1440,900",
@@ -87,6 +87,20 @@ _SCREEN_SIZES = [
     "1600,900",
     "2560,1440",
     "1280,1024",
+]
+_MOBILE_SIZES = [
+    "390,844",    # iPhone 14
+    "393,852",    # iPhone 15
+    "375,812",    # iPhone X/11
+    "360,800",    # Android common
+    "412,915",    # Pixel 6/7
+    "414,896",    # iPhone 11 Pro Max
+]
+_TABLET_SIZES = [
+    "768,1024",   # iPad
+    "820,1180",   # iPad Air
+    "800,1280",   # Android tablet
+    "1024,768",   # iPad landscape
 ]
 
 # Accept-Language header values
@@ -566,15 +580,24 @@ class SeleniumDriver:
         # language, and timezone to look like a different device/user.
         # ----------------------------------------------------------------
 
-        # Random user-agent
+        # Random user-agent — pick one from the full pool
         ua = random.choice(USER_AGENTS)
         options.add_argument(f"--user-agent={ua}")
         logger.debug(f"User-agent: {ua}")
 
-        # Random screen resolution (overrides the fixed 1920,1080 above)
-        screen = random.choice(_SCREEN_SIZES)
+        # Pick a screen size that matches the device type of the user-agent
+        ua_lower = ua.lower()
+        if "ipad" in ua_lower or "sm-x" in ua_lower or "sm-t" in ua_lower:
+            screen = random.choice(_TABLET_SIZES)
+        elif ("mobile" in ua_lower or "iphone" in ua_lower or "android" in ua_lower
+              or "pixel" in ua_lower or "redmi" in ua_lower or "oneplus" in ua_lower
+              or "poco" in ua_lower or "sm-s" in ua_lower or "sm-a" in ua_lower):
+            screen = random.choice(_MOBILE_SIZES)
+        else:
+            screen = random.choice(_DESKTOP_SIZES)
         w, h = screen.split(",")
         options.add_argument(f"--window-size={w},{h}")
+        logger.debug(f"Screen: {w}x{h}")
 
         # Random Accept-Language
         lang = random.choice(_LANGUAGES)
