@@ -61,7 +61,15 @@ class TrafficBot:
         _STOP_REQUESTED = False  # reset on each run
 
         urls = self.config.target_urls
+        if not urls:
+            logger.error("No target URLs configured. Aborting.")
+            return
+
         concurrency = max(1, self.config.concurrent_sessions)
+        # Ensure url_stats has an entry for every URL (in case config changed)
+        for url in urls:
+            if url not in self.url_stats:
+                self.url_stats[url] = {"completed": 0, "failed": 0}
 
         logger.info("=" * 60)
         logger.info("WEB TRAFFIC BOT STARTED")
